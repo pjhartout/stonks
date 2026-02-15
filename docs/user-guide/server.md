@@ -5,7 +5,7 @@ The stonks dashboard is a web UI for browsing experiments, viewing metric charts
 ## Installation
 
 ```bash
-pip install stonks[server]
+uv sync --extra server
 ```
 
 ## Starting the Server

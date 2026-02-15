@@ -5,7 +5,7 @@ stonks is designed to be self-hosted. The dashboard is a single Python process s
 ## Quick Start
 
 ```bash
-pip install stonks[server]
+uv sync --extra server
 stonks serve --db ./experiments.db
 # Dashboard at http://127.0.0.1:8000
 ```
@@ -17,7 +17,7 @@ stonks serve --db ./experiments.db
 Install stonks and run with uvicorn directly:
 
 ```bash
-pip install stonks[server]
+uv sync --extra server
 uvicorn stonks.server.app:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
@@ -61,10 +61,13 @@ Create a `Dockerfile`:
 
 ```dockerfile
 FROM python:3.11-slim
-RUN pip install --no-cache-dir stonks[server]
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY . /app
+WORKDIR /app
+RUN uv sync --extra server --no-dev
 EXPOSE 8000
 ENV STONKS_DB=/data/stonks.db
-CMD ["uvicorn", "stonks.server.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "stonks.server.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 Build and run:
