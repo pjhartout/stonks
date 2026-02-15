@@ -21,9 +21,21 @@ def serve_command(args: argparse.Namespace) -> None:
     from stonks.server.app import create_app
 
     db_path = str(resolve_db_path(args.db))
-    app = create_app(db_path)
     logger.info(f"Starting stonks server on {args.host}:{args.port}")
-    uvicorn.run(app, host=args.host, port=args.port)
+
+    if args.reload:
+        # uvicorn reload requires factory string, not app instance
+        uvicorn.run(
+            "stonks.server.app:create_app",
+            factory=True,
+            host=args.host,
+            port=args.port,
+            reload=True,
+            reload_dirs=["stonks"],
+        )
+    else:
+        app = create_app(db_path)
+        uvicorn.run(app, host=args.host, port=args.port)
 
 
 def main() -> None:
@@ -54,6 +66,12 @@ def main() -> None:
         type=int,
         default=8000,
         help="Port to bind to (default: 8000)",
+    )
+    serve_parser.add_argument(
+        "--reload",
+        action="store_true",
+        default=False,
+        help="Enable auto-reload on Python file changes (for development)",
     )
 
     args = parser.parse_args()
