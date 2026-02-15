@@ -1,14 +1,24 @@
 # Project description
 
-I want to build an app that allows for the easy tracking of machine learning experiments.  
+**stonks** is a lightweight, local-first ML experiment tracking library and dashboard. It provides a Python SDK for logging metrics/hyperparameters from training scripts (standalone or via PyTorch Lightning), stores data in SQLite (WAL mode), and serves a real-time dashboard via FastAPI.
 
-## Start page
+The Python package lives in `stonks/` and the frontend in `ui/`.
 
 # Tech stack
 
-- I want to manage python deps with uv
-- I want easy to maintain typescript code for the UI. Use whatever library you want but I want the UI to be lightweight and ultra-responsive. So don't use React.
-- I want a logger in pytorch lightning that allows me to log experiments easily. I want also to be able to use the library in a standalone way.
+- **Python**: uv for dependency management, FastAPI for the server, SQLite (WAL mode) for storage
+- **Frontend**: Svelte 5 + TypeScript + Vite (ultra-responsive, no React). Use **bun** for frontend dependency management and builds (`bun install`, `bun run build`, `bun run check`).
+- **PyTorch Lightning**: Custom `StonksLogger` that implements `lightning.pytorch.loggers.Logger`
+- **Charts**: uPlot (35KB, purpose-built for time-series)
+- **Real-time**: Server-Sent Events (SSE) for live metric streaming to the dashboard
+
+## Dependency management
+
+Use **uv** for all Python dependency management. Never use `pip install` directly. Key rules:
+- Add deps with `uv add <package>` (or `uv add --group dev <package>` for dev deps)
+- Run everything through `uv run` (e.g., `uv run pytest`, `uv run ruff check .`)
+- `uv.lock` must be committed to version control for reproducible builds
+- Sync environment with `uv sync --all-extras`
 
 ## Maintainability
 
@@ -20,14 +30,13 @@ I want a full `pytest`-based test suite for the python part, and whatever testin
 
 I want to run this test suite on each push and opened PR on github workflows. I also want to have precommit hook to check for uv formatting and ty respecting the project rules.
 
-Keep unit tests under `tests/unit/` and place integration/user-flow tests under `tests/integration/`. Integration tests should simulate user actions (e.g., via `app.run_test()`) and live alongside other integration helpers in that folder.
+Keep unit tests under `tests/unit/` and place integration/user-flow tests under `tests/integration/`. Integration tests should test full workflows (e.g., start_run -> log -> finish -> query) and FastAPI endpoints via httpx.
 
 **Important**: Always run tests (`uv run pytest`) after making any code changes to ensure everything still works correctly.
 
 **Performance**: The test suite must execute in under 20 seconds. To achieve this:
-- Mock `_start_refresh_worker` and `check_slurm_available` in tests using `app.run_test()`
-- Use `size=(80, 24)` for Textual app tests to reduce rendering overhead
-- Avoid `await pilot.pause()` unless absolutely necessary
+- Use `tmp_path` fixture for test databases (fast, isolated)
+- Use httpx `ASGITransport` for FastAPI integration tests (no real server needed)
 - Do not add `pytest-timeout` as a band-aid - fix slow tests at the root cause
 
 ## Logging
@@ -58,7 +67,7 @@ I want to have a clear code structure. In the end, I want the main source code f
    ```bash
    uv run ruff format .
    uv run ruff check --fix .
-   uv run ty check stoei/
+   uv run ty check stonks/
    ```
 
 2. **After making ANY changes, ALWAYS run:**
@@ -70,7 +79,7 @@ I want to have a clear code structure. In the end, I want the main source code f
    ```bash
    uv run ruff format --check .
    uv run ruff check .
-   uv run ty check stoei/
+   uv run ty check stonks/
    ```
 
 **Do NOT ask the user - just run these commands automatically after code changes.**
