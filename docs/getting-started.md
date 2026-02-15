@@ -2,27 +2,22 @@
 
 ## Installation
 
-Install stonks with pip (or uv):
+Clone the repository and install with uv:
 
 ```bash
+git clone https://github.com/pjhartout/stonks.git && cd stonks
+
 # Core SDK only (logging metrics)
-pip install stonks
+uv sync
 
 # With PyTorch Lightning integration
-pip install stonks[lightning]
+uv sync --extra lightning
 
 # With dashboard server
-pip install stonks[server]
+uv sync --extra server
 
 # Everything
-pip install stonks[all]
-```
-
-With uv:
-
-```bash
-uv add stonks           # core
-uv add stonks[all]      # everything
+uv sync --all-extras
 ```
 
 ## Quick Start
@@ -44,7 +39,7 @@ This creates a `stonks.db` file in your current directory containing all logged 
 ### 2. View results in the dashboard
 
 ```bash
-pip install stonks[server]  # if not already installed
+uv sync --extra server  # if not already installed
 stonks serve
 ```
 

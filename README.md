@@ -9,15 +9,17 @@ Disclaimer: _I do not pretend to know what I am doing_, I am just making somethi
 ## Install
 
 ```bash
-pip install stonks[all]    # SDK + Lightning + dashboard
+git clone https://github.com/pjhartout/stonks.git && cd stonks
+uv sync --all-extras
 ```
 
 Or pick what you need:
 
 ```bash
-pip install stonks              # core SDK only
-pip install stonks[lightning]   # + PyTorch Lightning logger
-pip install stonks[server]      # + dashboard server
+uv sync                       # core SDK only
+uv sync --extra lightning     # + PyTorch Lightning logger
+uv sync --extra server        # + dashboard server
+uv sync --all-extras          # everything
 ```
 
 ## Log metrics

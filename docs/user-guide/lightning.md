@@ -5,7 +5,7 @@ stonks provides a drop-in Lightning logger via `StonksLogger`.
 ## Installation
 
 ```bash
-pip install stonks[lightning]
+uv sync --extra lightning
 ```
 
 ## Basic Usage
