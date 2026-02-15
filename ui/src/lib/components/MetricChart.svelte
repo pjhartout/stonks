@@ -78,10 +78,26 @@
   function selectionRangePlugin(): uPlot.Plugin {
     let labelLeft: HTMLDivElement;
     let labelRight: HTMLDivElement;
+    let dimLeft: HTMLDivElement;
+    let dimRight: HTMLDivElement;
 
     return {
       hooks: {
         init: (u: uPlot) => {
+          const over = u.over;
+
+          // Dim overlays that darken the area outside the selection
+          dimLeft = document.createElement("div");
+          dimLeft.className = "sel-dim";
+          dimLeft.style.display = "none";
+          dimLeft.style.left = "0";
+          over.appendChild(dimLeft);
+
+          dimRight = document.createElement("div");
+          dimRight.className = "sel-dim";
+          dimRight.style.display = "none";
+          over.appendChild(dimRight);
+
           const wrap = u.root.querySelector(".u-wrap")!;
 
           labelLeft = document.createElement("div");
@@ -96,12 +112,30 @@
         },
         setSelect: (u: uPlot) => {
           const sel = u.select;
+          const overWidth = u.over.clientWidth;
+          const overHeight = u.over.clientHeight;
+
           if (sel.width <= 0) {
             labelLeft.style.display = "none";
             labelRight.style.display = "none";
+            dimLeft.style.display = "none";
+            dimRight.style.display = "none";
             return;
           }
 
+          // Dim the regions outside the selection
+          dimLeft.style.display = "block";
+          dimLeft.style.width = `${sel.left}px`;
+          dimLeft.style.height = `${overHeight}px`;
+          dimLeft.style.top = "0";
+
+          dimRight.style.display = "block";
+          dimRight.style.left = `${sel.left + sel.width}px`;
+          dimRight.style.width = `${overWidth - sel.left - sel.width}px`;
+          dimRight.style.height = `${overHeight}px`;
+          dimRight.style.top = "0";
+
+          // Range labels
           const leftVal = u.posToVal(sel.left, "x");
           const rightVal = u.posToVal(sel.left + sel.width, "x");
 
@@ -249,5 +283,20 @@
   }
   .chart-container :global(.sel-label-right) {
     transform: translateX(0);
+  }
+
+  /* Make the selection box clearly visible */
+  .chart-container :global(.u-select) {
+    background: rgba(99, 102, 241, 0.15) !important;
+    border-left: 1px solid rgba(99, 102, 241, 0.6);
+    border-right: 1px solid rgba(99, 102, 241, 0.6);
+  }
+
+  /* Dim overlay for areas outside selection */
+  .chart-container :global(.sel-dim) {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.35);
   }
 </style>
