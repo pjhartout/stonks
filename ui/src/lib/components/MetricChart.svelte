@@ -7,6 +7,7 @@
 
   let container: HTMLDivElement;
   let chart: uPlot | null = null;
+  let ro: ResizeObserver | null = null;
 
   function makeData(data: MetricSeries): [Float64Array, Float64Array] {
     const steps = new Float64Array(data.steps);
@@ -22,8 +23,9 @@
 
     const opts: uPlot.Options = {
       width: el.clientWidth,
-      height: 240,
+      height: 200,
       cursor: { show: true, drag: { x: true, y: false } },
+      legend: { show: false },
       scales: {
         x: { time: false },
       },
@@ -56,13 +58,21 @@
     };
 
     chart = new uPlot(opts, [steps, values], el);
+
+    // Resize chart when container width changes
+    ro = new ResizeObserver((entries) => {
+      if (chart) {
+        const w = entries[0].contentRect.width;
+        if (w > 0) chart.setSize({ width: w, height: 200 });
+      }
+    });
+    ro.observe(el);
   }
 
   $effect(() => {
     if (!container || !series || series.steps.length === 0) return;
 
     if (chart) {
-      // Update data in-place instead of recreating the chart
       const [steps, values] = makeData(series);
       chart.setData([steps, values]);
     } else {
@@ -70,6 +80,8 @@
     }
 
     return () => {
+      ro?.disconnect();
+      ro = null;
       if (chart) {
         chart.destroy();
         chart = null;
@@ -99,8 +111,5 @@
   }
   .chart {
     width: 100%;
-  }
-  .chart :global(.u-wrap) {
-    width: 100% !important;
   }
 </style>
