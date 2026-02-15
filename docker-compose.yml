@@ -1,0 +1,9 @@
+services:
+  stonks:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - STONKS_DB=/data/stonks.db
