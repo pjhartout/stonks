@@ -1,4 +1,100 @@
 # stonks
-ML experiment tracking library
 
-This library is born out of the frustration of the extortionate pricing strategies of overleveraged ML experiment tracking companies.
+Lightweight, self-hosted ML experiment tracking. No accounts, no SaaS, no nonsense — just a SQLite file and a dashboard.
+
+Born out of frustration with the extortionate pricing of overleveraged ML experiment tracking companies.
+
+## Install
+
+```bash
+pip install stonks[all]    # SDK + Lightning + dashboard
+```
+
+Or pick what you need:
+
+```bash
+pip install stonks              # core SDK only
+pip install stonks[lightning]   # + PyTorch Lightning logger
+pip install stonks[server]      # + dashboard server
+```
+
+## Log metrics
+
+```python
+import stonks
+
+with stonks.start_run("my-experiment", config={"lr": 0.01, "epochs": 10}) as run:
+    for epoch in range(10):
+        loss = train_one_epoch()
+        val_acc = evaluate()
+        run.log({"train/loss": loss, "val/accuracy": val_acc}, step=epoch)
+```
+
+All data is stored in a local `stonks.db` file. No network, no credentials.
+
+## PyTorch Lightning
+
+```python
+from stonks.lightning import StonksLogger
+
+logger = StonksLogger(experiment_name="resnet-cifar10")
+trainer = Trainer(max_epochs=20, logger=logger)
+trainer.fit(model, datamodule)
+```
+
+## View the dashboard
+
+```bash
+stonks serve
+# Open http://127.0.0.1:8000
+```
+
+Live metric charts, run comparison, config diffs — all updating in real time via SSE.
+
+## Query results programmatically
+
+```python
+import stonks
+
+with stonks.open() as db:
+    for exp in db.list_experiments():
+        for run in db.list_runs(exp.id):
+            series = db.get_metrics(run.id, "val/accuracy")
+            print(f"{run.name}: {max(series.values):.4f}")
+```
+
+## Deploy
+
+**Docker:**
+
+```bash
+docker compose up
+# or: docker run -v ./data:/data -e STONKS_DB=/data/stonks.db -p 8000:8000 stonks
+```
+
+**Bare metal:**
+
+```bash
+./run.sh --db /data/stonks.db --host 0.0.0.0
+```
+
+The wrapper script handles virtualenv creation and installation automatically. See `docs/self-hosting.md` for systemd, nginx, and team deployment guides.
+
+## Development
+
+```bash
+git clone https://github.com/pjhartout/stonks.git && cd stonks
+uv sync --all-extras          # Python deps
+cd ui && bun install && cd .. # frontend deps
+
+# Terminal 1: backend with auto-reload
+stonks serve --reload
+
+# Terminal 2: frontend with HMR
+cd ui && bun run dev
+# Open http://localhost:5173
+```
+
+## License
+
+Apache-2.0
