@@ -19,6 +19,7 @@ Or pick what you need:
 uv sync                       # core SDK only
 uv sync --extra lightning     # + PyTorch Lightning logger
 uv sync --extra server        # + dashboard server
+uv sync --extra gpu           # + NVIDIA GPU monitoring
 uv sync --all-extras          # everything
 ```
 
@@ -45,6 +46,35 @@ logger = StonksLogger(experiment_name="resnet-cifar10")
 trainer = Trainer(max_epochs=20, logger=logger)
 trainer.fit(model, datamodule)
 ```
+
+## Hardware monitoring
+
+Track CPU, RAM, disk I/O, and network usage alongside your training metrics. Enable it with `hardware=True`:
+
+```python
+import stonks
+
+with stonks.start_run("my-experiment", hardware=True) as run:
+    for epoch in range(100):
+        loss = train_one_epoch()
+        run.log({"train/loss": loss}, step=epoch)
+```
+
+Hardware metrics are logged under `sys/` keys (e.g. `sys/cpu_percent`, `sys/ram_used_gb`) and appear in a dedicated "System Resources" panel in the dashboard.
+
+For NVIDIA GPU monitoring, install the `gpu` extra (`uv sync --extra gpu`). GPU metrics are collected automatically when `pynvml` is available.
+
+```python
+# PyTorch Lightning
+from stonks.lightning import StonksLogger
+
+logger = StonksLogger("resnet-cifar10", hardware=True, hardware_interval=10.0)
+trainer = Trainer(max_epochs=20, logger=logger)
+```
+
+Options:
+- `hardware_interval` — seconds between polls (default 5.0, minimum 1.0)
+- `hardware_gpu` — set to `False` to disable GPU monitoring even when pynvml is installed
 
 ## View the dashboard
 

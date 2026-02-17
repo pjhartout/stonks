@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
     "loguru>=0.7",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]
@@ -16,7 +17,8 @@ server = [
     "uvicorn[standard]>=0.30",
     "sse-starlette>=2.0",
 ]
-all = ["stonks[lightning,server]"]
+gpu = ["nvidia-ml-py>=12.0"]
+all = ["stonks[lightning,server,gpu]"]
 
 [dependency-groups]
 dev = [
