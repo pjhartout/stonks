@@ -34,6 +34,9 @@ def start_run(
     db: str | None = None,
     run_name: str | None = None,
     strict: bool = False,
+    hardware: bool = False,
+    hardware_interval: float = 5.0,
+    hardware_gpu: bool = True,
 ) -> Run:
     """Start a new training run.
 
@@ -43,6 +46,9 @@ def start_run(
         db: Path to the database file. Defaults to ./stonks.db or STONKS_DB env var.
         run_name: Optional display name for the run.
         strict: If True, raise on logging errors instead of swallowing them.
+        hardware: If True, enable background hardware monitoring (CPU, RAM, disk, network).
+        hardware_interval: Seconds between hardware polls (minimum 1.0, default 5.0).
+        hardware_gpu: Whether to attempt GPU monitoring via pynvml (default True).
 
     Returns:
         A Run instance (use as context manager or call .start() manually).
@@ -54,6 +60,9 @@ def start_run(
         config=config,
         run_name=run_name,
         strict=strict,
+        hardware=hardware,
+        hardware_interval=hardware_interval,
+        hardware_gpu=hardware_gpu,
     )
 
 

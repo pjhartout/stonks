@@ -9,6 +9,7 @@ from types import TracebackType
 from loguru import logger
 
 from stonks.buffer import MetricBuffer
+from stonks.hardware import HardwareMonitor
 from stonks.models import RunInfo
 from stonks.store import (
     create_connection,
@@ -36,6 +37,9 @@ class Run:
         config: Optional hyperparameter configuration dict.
         run_name: Optional display name for this run.
         strict: If True, raise on logging errors. If False, swallow and warn.
+        hardware: If True, enable background hardware monitoring.
+        hardware_interval: Seconds between hardware polls (minimum 1.0).
+        hardware_gpu: Whether to attempt GPU monitoring via pynvml.
     """
 
     def __init__(
@@ -45,15 +49,22 @@ class Run:
         config: dict | None = None,
         run_name: str | None = None,
         strict: bool = False,
+        hardware: bool = False,
+        hardware_interval: float = 5.0,
+        hardware_gpu: bool = True,
     ) -> None:
         self._experiment_name = experiment_name
         self._db_path = Path(db)
         self._config = config
         self._run_name = run_name
         self._strict = strict
+        self._hardware = hardware
+        self._hardware_interval = hardware_interval
+        self._hardware_gpu = hardware_gpu
         self._conn: sqlite3.Connection | None = None
         self._run_info: RunInfo | None = None
         self._buffer: MetricBuffer | None = None
+        self._hw_monitor: HardwareMonitor | None = None
         self._step_counter = 0
 
     @property
@@ -93,6 +104,14 @@ class Run:
             strict=self._strict,
         )
         self._buffer.start()
+
+        if self._hardware:
+            self._hw_monitor = HardwareMonitor(
+                log_fn=self._buffer.add,
+                interval=self._hardware_interval,
+                enable_gpu=self._hardware_gpu,
+            )
+            self._hw_monitor.start()
 
         logger.info(f"Started run {self._run_info.id} in experiment '{self._experiment_name}'")
         return self
@@ -145,6 +164,10 @@ class Run:
         Args:
             status: Final status (completed, failed, interrupted).
         """
+        if self._hw_monitor is not None:
+            self._hw_monitor.stop()
+            self._hw_monitor = None
+
         if self._buffer is not None:
             self._buffer.stop()
             self._buffer = None

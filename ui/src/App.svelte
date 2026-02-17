@@ -5,6 +5,7 @@
   import MetricChart from "./lib/components/MetricChart.svelte";
   import ConfigComparison from "./lib/components/ConfigComparison.svelte";
   import EmptyState from "./lib/components/EmptyState.svelte";
+  import HardwarePanel from "./lib/components/HardwarePanel.svelte";
   import {
     getExperiments,
     getSelectedExperimentId,
@@ -36,10 +37,24 @@
 
   let selectedRun = $derived(runs.find((r) => r.id === selectedRunId) ?? null);
 
-  /** Group metric keys by prefix (e.g. train/loss -> train). */
+  /** Separate hardware (sys/) keys from training keys. */
+  let trainingKeys = $derived(metricKeys.filter((k) => !k.startsWith("sys/")));
+  let hardwareKeys = $derived(metricKeys.filter((k) => k.startsWith("sys/")));
+
+  /** Hardware metric data filtered from metricData. */
+  let hardwareData = $derived.by(() => {
+    const map = new Map<string, import("./lib/types").MetricSeries>();
+    for (const key of hardwareKeys) {
+      const series = metricData.get(key);
+      if (series) map.set(key, series);
+    }
+    return map;
+  });
+
+  /** Group training metric keys by prefix (e.g. train/loss -> train). */
   let groupedKeys = $derived.by(() => {
     const groups = new Map<string, string[]>();
-    for (const key of metricKeys) {
+    for (const key of trainingKeys) {
       const slash = key.indexOf("/");
       const group = slash > 0 ? key.slice(0, slash) : "metrics";
       if (!groups.has(group)) groups.set(group, []);
@@ -84,6 +99,10 @@
         {#if selectedRun}
           <section class="metrics-section">
             <h2>Metrics &mdash; {selectedRun.name || selectedRun.id.slice(0, 8)}</h2>
+
+            {#if hardwareKeys.length > 0}
+              <HardwarePanel metrics={hardwareData} />
+            {/if}
 
             {#if metricKeys.length === 0}
               <EmptyState

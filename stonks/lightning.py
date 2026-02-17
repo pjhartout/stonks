@@ -26,11 +26,14 @@ class StonksLogger(Logger):
         db: Path to the SQLite database. Defaults to ./stonks.db or STONKS_DB env var.
         run_name: Optional display name for this run.
         strict: If True, raise on logging errors. If False, swallow and warn.
+        hardware: If True, enable background hardware monitoring.
+        hardware_interval: Seconds between hardware polls (minimum 1.0, default 5.0).
+        hardware_gpu: Whether to attempt GPU monitoring via pynvml (default True).
 
     Example::
 
         from stonks.lightning import StonksLogger
-        logger = StonksLogger("my-experiment")
+        logger = StonksLogger("my-experiment", hardware=True)
         trainer = pl.Trainer(logger=logger)
         trainer.fit(model)
     """
@@ -41,12 +44,18 @@ class StonksLogger(Logger):
         db: str | None = None,
         run_name: str | None = None,
         strict: bool = False,
+        hardware: bool = False,
+        hardware_interval: float = 5.0,
+        hardware_gpu: bool = True,
     ) -> None:
         super().__init__()
         self._experiment_name = experiment_name
         self._db_path = str(resolve_db_path(db))
         self._run_name = run_name
         self._strict = strict
+        self._hardware = hardware
+        self._hardware_interval = hardware_interval
+        self._hardware_gpu = hardware_gpu
         self._run: Run | None = None
 
     def _ensure_run(self) -> Run:
@@ -61,6 +70,9 @@ class StonksLogger(Logger):
                 db=self._db_path,
                 run_name=self._run_name,
                 strict=self._strict,
+                hardware=self._hardware,
+                hardware_interval=self._hardware_interval,
+                hardware_gpu=self._hardware_gpu,
             )
             self._run.start()
             log.debug(f"StonksLogger initialized run {self._run.id}")
