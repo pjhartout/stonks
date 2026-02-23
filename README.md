@@ -4,8 +4,6 @@ Lightweight, self-hosted ML experiment tracking. No accounts, no SaaS, no nonsen
 
 Born out of frustration with the extortionate pricing of overleveraged ML experiment tracking companies and the hopeless clunkiness of `tensorboard`. 
 
-Disclaimer: _I do not pretend to know what I am doing_, I am just making something that I want.
-
 ## Install
 
 ```bash
