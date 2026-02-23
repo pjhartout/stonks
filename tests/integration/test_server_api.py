@@ -114,6 +114,10 @@ class TestRunEndpoints:
             "created_at",
             "ended_at",
             "last_heartbeat",
+            "group",
+            "job_type",
+            "tags",
+            "notes",
         }
         assert set(run.keys()) == expected_fields
 

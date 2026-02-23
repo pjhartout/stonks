@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
+from typing import Literal
 
 from stonks.config import resolve_db_path
-from stonks.models import Experiment, MetricPoint, MetricSeries, RunInfo
+
+__version__ = "0.1.0"
+from stonks.models import Experiment, MetricPoint, MetricSeries, Project, RunInfo
 from stonks.run import Run
 from stonks.store import (
     create_connection,
@@ -17,10 +21,12 @@ from stonks.store import (
 )
 
 __all__ = [
+    "__version__",
     "Database",
     "Experiment",
     "MetricPoint",
     "MetricSeries",
+    "Project",
     "Run",
     "RunInfo",
     "open",
@@ -29,40 +35,92 @@ __all__ = [
 
 
 def start_run(
-    experiment: str,
+    experiment: str | None = None,
+    *,
+    project: str | None = None,
+    name: str | None = None,
+    id: str | None = None,
+    resume: bool | Literal["must"] | None = None,
+    group: str | None = None,
+    job_type: str | None = None,
+    tags: list[str] | None = None,
+    notes: str | None = None,
     config: dict | None = None,
-    db: str | None = None,
-    run_name: str | None = None,
-    strict: bool = False,
+    prefix: str = "",
+    save_dir: str | None = None,
     hardware: bool = False,
     hardware_interval: float = 5.0,
     hardware_gpu: bool = True,
+    strict: bool = False,
+    # Deprecated parameter names.
+    db: str | None = None,
+    run_name: str | None = None,
 ) -> Run:
     """Start a new training run.
 
     Args:
-        experiment: Name of the experiment to log under.
+        experiment: Name of the experiment to log under. Defaults to "default".
+        project: Optional project name for top-level grouping.
+        name: Optional display name for the run.
+        id: Optional run ID. Used with resume to resume a specific run.
+        resume: If True, resume existing run. If "must", raise if not found.
+        group: Optional grouping key (e.g. k-fold, sweep).
+        job_type: Optional run type (e.g. train, eval).
+        tags: Optional list of tags.
+        notes: Optional run description.
         config: Optional hyperparameter configuration.
-        db: Path to the database file. Defaults to ./stonks.db or STONKS_DB env var.
-        run_name: Optional display name for the run.
+        prefix: Metric key prefix prepended to all logged keys.
+        save_dir: Path to the database file. Defaults to ./stonks.db or STONKS_DB.
+        hardware: If True, enable background hardware monitoring.
+        hardware_interval: Seconds between hardware polls (minimum 1.0).
+        hardware_gpu: Whether to attempt GPU monitoring via pynvml.
         strict: If True, raise on logging errors instead of swallowing them.
-        hardware: If True, enable background hardware monitoring (CPU, RAM, disk, network).
-        hardware_interval: Seconds between hardware polls (minimum 1.0, default 5.0).
-        hardware_gpu: Whether to attempt GPU monitoring via pynvml (default True).
+        db: Deprecated. Use save_dir instead.
+        run_name: Deprecated. Use name instead.
 
     Returns:
         A Run instance (use as context manager or call .start() manually).
     """
-    db_path = resolve_db_path(db)
+    # Handle deprecated parameter names.
+    if db is not None:
+        warnings.warn(
+            "The 'db' parameter is deprecated. Use 'save_dir' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if save_dir is None:
+            save_dir = db
+
+    if run_name is not None:
+        warnings.warn(
+            "The 'run_name' parameter is deprecated. Use 'name' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if name is None:
+            name = run_name
+
+    if experiment is None:
+        experiment = "default"
+
+    db_path = resolve_db_path(save_dir)
     return Run(
         experiment_name=experiment,
         db=db_path,
         config=config,
-        run_name=run_name,
+        run_name=name,
         strict=strict,
         hardware=hardware,
         hardware_interval=hardware_interval,
         hardware_gpu=hardware_gpu,
+        project=project,
+        run_id=id,
+        resume=resume,
+        group=group,
+        job_type=job_type,
+        tags=tags,
+        notes=notes,
+        prefix=prefix,
     )
 
 

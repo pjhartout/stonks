@@ -30,6 +30,10 @@ def _run_to_dict(run) -> dict:
         "created_at": run.created_at,
         "ended_at": run.ended_at,
         "last_heartbeat": run.last_heartbeat,
+        "group": run.group,
+        "job_type": run.job_type,
+        "tags": run.tags,
+        "notes": run.notes,
     }
 
 

@@ -24,6 +24,10 @@ Use **uv** for all Python dependency management. Never use `pip install` directl
 
 I want a codebase that is easily maintainable. I want minimal coupling. If a pattern is particularly applicable in this project, apply it, otherwise focus on the functionality over the purity of how those patterns are applied.
 
+## API stability
+
+The public-facing API surface (everything exported from `stonks/__init__.py`) is **stable** and must not be changed without careful consideration. Do not rename, remove, or change the signatures of public functions, classes, or parameters. Deprecations must go through a proper deprecation cycle (add a deprecation warning first, remove no earlier than the next major version). Internal refactoring (e.g. splitting modules) is fine as long as all public imports continue to work unchanged.
+
 ## Testing
 
 I want a full `pytest`-based test suite for the python part, and whatever testing is used for the framework you end up choosing. Document that choice here. I want to make extensive use of fixtures, instead of setup and teardowns.
@@ -83,6 +87,34 @@ I want to have a clear code structure. In the end, I want the main source code f
    ```
 
 **Do NOT ask the user - just run these commands automatically after code changes.**
+
+## Commit Messages
+
+All commits **must** follow [Conventional Commits](https://www.conventionalcommits.org/) with an optional scope:
+
+```
+type(scope): description
+```
+
+Allowed types: `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore`, `perf`, `build`, `style`.
+
+Examples:
+- `feat(ui): add dark mode toggle`
+- `fix: prevent duplicate metric keys`
+- `docs: update getting started guide`
+- `refactor(store): extract connection pooling`
+
+The changelog is auto-generated from these commits via [git-cliff](https://git-cliff.org/) (configured in `cliff.toml`).
+
+## Releases
+
+Releases are managed via `scripts/release.py`. It bumps the version in `pyproject.toml` and `stonks/__init__.py`, commits, tags, and pushes. The tag push triggers `.github/workflows/release.yml` which creates a GitHub Release with git-cliff release notes.
+
+```bash
+python scripts/release.py patch   # 0.1.0 -> 0.1.1
+python scripts/release.py minor   # 0.1.0 -> 0.2.0
+python scripts/release.py major   # 0.1.0 -> 1.0.0
+```
 
 ## Pull Requests
 

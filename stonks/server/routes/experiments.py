@@ -7,7 +7,11 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException
 
 from stonks.server.dependencies import get_db
-from stonks.store import count_runs, get_experiment_by_id, list_experiments_with_run_counts
+from stonks.store import (
+    count_runs,
+    get_experiment_by_id,
+    list_experiments_with_run_counts,
+)
 
 router = APIRouter(tags=["experiments"])
 
@@ -44,5 +48,6 @@ def get_experiment(experiment_id: str, conn: sqlite3.Connection = Depends(get_db
         "name": exp.name,
         "description": exp.description,
         "created_at": exp.created_at,
+        "project_id": exp.project_id,
         "run_count": run_count,
     }
