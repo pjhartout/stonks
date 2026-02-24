@@ -205,15 +205,9 @@
     ro.observe(el);
   }
 
+  // Create chart once on mount, destroy on unmount
   $effect(() => {
-    if (!container || !series || series.steps.length === 0) return;
-
-    if (chart) {
-      const [steps, values] = makeData(series);
-      chart.setData([steps, values]);
-    } else {
-      createChart(container, series);
-    }
+    if (!container) return;
 
     return () => {
       ro?.disconnect();
@@ -223,6 +217,18 @@
         chart = null;
       }
     };
+  });
+
+  // Update data reactively without destroying the chart
+  $effect(() => {
+    if (!container || !series || series.steps.length === 0) return;
+
+    if (chart) {
+      const [steps, values] = makeData(series);
+      chart.setData([steps, values]);
+    } else {
+      createChart(container, series);
+    }
   });
 </script>
 

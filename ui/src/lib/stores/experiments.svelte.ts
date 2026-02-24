@@ -101,16 +101,34 @@ export async function selectRun(id: string) {
   await loadMetricsForRun(id);
 }
 
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 async function loadMetricsForRun(runId: string) {
   try {
-    metricKeys = await fetchMetricKeys(runId);
+    const newKeys = await fetchMetricKeys(runId);
     const newData = new Map<string, MetricSeries>();
-    const promises = metricKeys.map(async (key) => {
+    const promises = newKeys.map(async (key) => {
       const series = await fetchMetrics(runId, key, 1000);
       newData.set(key, series);
     });
     await Promise.all(promises);
-    metricData = newData;
+
+    // Update data FIRST so metricData.has(key) is true when keys are evaluated
+    for (const [key, series] of newData) {
+      metricData.set(key, series);
+    }
+    metricData = metricData;
+
+    // Only reassign keys if the set actually changed (avoids unnecessary DOM churn)
+    if (!arraysEqual(newKeys, metricKeys)) {
+      metricKeys = newKeys;
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : "Failed to load metrics";
   }
