@@ -24,6 +24,13 @@ export interface MetricSeries {
   timestamps: number[];
 }
 
+export interface RunSeries {
+  runId: string;
+  runName: string;
+  color: string;
+  data: MetricSeries;
+}
+
 export interface RunUpdateEvent {
   run_id: string;
   status: Run["status"];

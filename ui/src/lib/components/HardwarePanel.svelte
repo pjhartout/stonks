@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { MetricSeries } from "../types";
+  import type { MetricSeries, RunSeries } from "../types";
   import MetricChart from "./MetricChart.svelte";
 
-  let { metrics }: { metrics: Map<string, MetricSeries> } = $props();
+  let { metrics, runName }: { metrics: Map<string, MetricSeries>; runName: string } = $props();
 
   let collapsed = $state(false);
 
@@ -31,6 +31,11 @@
     if (gpuKeys.length > 0) groups.push(["GPU", gpuKeys]);
     return groups;
   });
+
+  /** Wrap a single MetricSeries into a RunSeries[] for MetricChart. */
+  function wrapSeries(series: MetricSeries): RunSeries[] {
+    return [{ runId: "hw", runName, color: "#6366f1", data: series }];
+  }
 </script>
 
 {#if metrics.size > 0}
@@ -49,7 +54,7 @@
             <div class="charts-grid">
               {#each keys as key (key)}
                 {#if metrics.has(key)}
-                  <MetricChart series={metrics.get(key)!} title={key} />
+                  <MetricChart runs={wrapSeries(metrics.get(key)!)} title={key} />
                 {/if}
               {/each}
             </div>

@@ -6,11 +6,14 @@
   import ConfigComparison from "./lib/components/ConfigComparison.svelte";
   import EmptyState from "./lib/components/EmptyState.svelte";
   import HardwarePanel from "./lib/components/HardwarePanel.svelte";
+  import type { MetricSeries, RunSeries } from "./lib/types";
+  import { colorForRun } from "./lib/utils/colors";
   import {
     getExperiments,
     getSelectedExperimentId,
     getRuns,
-    getSelectedRunId,
+    getSelectedRunIds,
+    getPrimaryRunId,
     getMetricKeys,
     getMetricData,
     getLoading,
@@ -18,6 +21,7 @@
     loadExperiments,
     selectExperiment,
     selectRun,
+    toggleRunSelection,
     cleanup,
   } from "./lib/stores/experiments.svelte";
 
@@ -29,24 +33,30 @@
   let experiments = $derived(getExperiments());
   let selectedExperimentId = $derived(getSelectedExperimentId());
   let runs = $derived(getRuns());
-  let selectedRunId = $derived(getSelectedRunId());
+  let selectedRunIds = $derived(getSelectedRunIds());
+  let primaryRunId = $derived(getPrimaryRunId());
   let metricKeys = $derived(getMetricKeys());
   let metricData = $derived(getMetricData());
   let loading = $derived(getLoading());
   let error = $derived(getError());
 
-  let selectedRun = $derived(runs.find((r) => r.id === selectedRunId) ?? null);
+  let primaryRun = $derived(runs.find((r) => r.id === primaryRunId) ?? null);
+  let selectedRuns = $derived(runs.filter((r) => selectedRunIds.has(r.id)));
 
   /** Separate hardware (sys/) keys from training keys. */
   let trainingKeys = $derived(metricKeys.filter((k) => !k.startsWith("sys/")));
   let hardwareKeys = $derived(metricKeys.filter((k) => k.startsWith("sys/")));
 
-  /** Hardware metric data filtered from metricData. */
+  /** Hardware metric data for the primary run only. */
   let hardwareData = $derived.by(() => {
-    const map = new Map<string, import("./lib/types").MetricSeries>();
+    const map = new Map<string, MetricSeries>();
+    if (!primaryRunId) return map;
     for (const key of hardwareKeys) {
-      const series = metricData.get(key);
-      if (series) map.set(key, series);
+      const runMap = metricData.get(key);
+      if (runMap) {
+        const series = runMap.get(primaryRunId);
+        if (series) map.set(key, series);
+      }
     }
     return map;
   });
@@ -61,6 +71,35 @@
       groups.get(group)!.push(key);
     }
     return groups;
+  });
+
+  /** Build RunSeries[] for a given metric key across all selected runs. */
+  function runsForKey(key: string): RunSeries[] {
+    const runMap = metricData.get(key);
+    if (!runMap) return [];
+    const result: RunSeries[] = [];
+    for (const run of selectedRuns) {
+      const series = runMap.get(run.id);
+      if (series) {
+        result.push({
+          runId: run.id,
+          runName: run.name || run.id.slice(0, 8),
+          color: colorForRun(run.id),
+          data: series,
+        });
+      }
+    }
+    return result;
+  }
+
+  /** Header text for the metrics section. */
+  let metricsHeader = $derived.by(() => {
+    if (selectedRuns.length === 0) return "";
+    if (selectedRuns.length === 1) {
+      const r = selectedRuns[0];
+      return `Metrics \u2014 ${r.name || r.id.slice(0, 8)}`;
+    }
+    return `Comparing ${selectedRuns.length} runs`;
   });
 </script>
 
@@ -91,17 +130,22 @@
           <h2>Runs</h2>
           <RunTable
             {runs}
-            selectedId={selectedRunId}
+            selectedIds={selectedRunIds}
+            primaryId={primaryRunId}
             onSelect={selectRun}
+            onToggle={toggleRunSelection}
           />
         </section>
 
-        {#if selectedRun}
+        {#if selectedRuns.length > 0}
           <section class="metrics-section">
-            <h2>Metrics &mdash; {selectedRun.name || selectedRun.id.slice(0, 8)}</h2>
+            <h2>{metricsHeader}</h2>
 
-            {#if hardwareKeys.length > 0}
-              <HardwarePanel metrics={hardwareData} />
+            {#if hardwareKeys.length > 0 && primaryRun}
+              <HardwarePanel
+                metrics={hardwareData}
+                runName={primaryRun.name || primaryRun.id.slice(0, 8)}
+              />
             {/if}
 
             {#if metricKeys.length === 0}
@@ -115,9 +159,10 @@
                   <h3 class="group-label">{group}</h3>
                   <div class="charts-grid">
                     {#each keys as key (key)}
-                      {#if metricData.has(key)}
+                      {@const rs = runsForKey(key)}
+                      {#if rs.length > 0}
                         <MetricChart
-                          series={metricData.get(key)!}
+                          runs={rs}
                           title={key}
                         />
                       {/if}
@@ -126,7 +171,7 @@
                 </div>
               {/each}
 
-              <ConfigComparison runs={[selectedRun]} />
+              <ConfigComparison runs={selectedRuns} />
             {/if}
           </section>
         {/if}

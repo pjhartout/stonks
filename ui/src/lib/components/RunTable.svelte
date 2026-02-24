@@ -1,15 +1,20 @@
 <script lang="ts">
   import type { Run } from "../types";
+  import { MAX_SELECTED_RUNS } from "../utils/colors";
   import EmptyState from "./EmptyState.svelte";
 
   let {
     runs,
-    selectedId,
+    selectedIds,
+    primaryId,
     onSelect,
+    onToggle,
   }: {
     runs: Run[];
-    selectedId: string | null;
+    selectedIds: Set<string>;
+    primaryId: string | null;
     onSelect: (id: string) => void;
+    onToggle: (id: string) => void;
   } = $props();
 
   const STATUS_COLORS: Record<Run["status"], string> = {
@@ -41,15 +46,29 @@
       minute: "2-digit",
     });
   }
+
+  function handleCheckbox(e: Event, runId: string) {
+    e.stopPropagation();
+    onToggle(runId);
+  }
 </script>
 
 <div class="run-table">
   {#if runs.length === 0}
     <EmptyState title="No runs" message="Runs will appear here when training starts." />
   {:else}
+    {#if selectedIds.size > 0}
+      <div class="selection-info">
+        {selectedIds.size} of {runs.length} run{runs.length !== 1 ? "s" : ""} selected
+        {#if selectedIds.size >= MAX_SELECTED_RUNS}
+          <span class="limit-badge">max</span>
+        {/if}
+      </div>
+    {/if}
     <table>
       <thead>
         <tr>
+          <th class="th-checkbox"></th>
           <th>Status</th>
           <th>Name</th>
           <th>Duration</th>
@@ -60,9 +79,21 @@
       <tbody>
         {#each runs as run (run.id)}
           <tr
-            class:selected={selectedId === run.id}
+            class:selected={selectedIds.has(run.id)}
+            class:primary={primaryId === run.id}
             onclick={() => onSelect(run.id)}
           >
+            <td class="td-checkbox">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(run.id)}
+                disabled={!selectedIds.has(run.id) && selectedIds.size >= MAX_SELECTED_RUNS}
+                onclick={(e) => handleCheckbox(e, run.id)}
+                title={!selectedIds.has(run.id) && selectedIds.size >= MAX_SELECTED_RUNS
+                  ? `Maximum ${MAX_SELECTED_RUNS} runs can be compared`
+                  : "Toggle comparison"}
+              />
+            </td>
             <td>
               <span
                 class="status-dot"
@@ -85,6 +116,24 @@
   .run-table {
     overflow-x: auto;
   }
+  .selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .limit-badge {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--orange);
+    background: rgba(249, 115, 22, 0.1);
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+  }
   table {
     width: 100%;
     border-collapse: collapse;
@@ -106,10 +155,26 @@
     letter-spacing: 0.05em;
     border-bottom: 1px solid var(--border);
   }
+  .th-checkbox {
+    width: 32px;
+    padding: 0.5rem 0.5rem;
+  }
   td {
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
+  }
+  .td-checkbox {
+    width: 32px;
+    padding: 0.5rem 0.5rem;
+  }
+  .td-checkbox input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+  .td-checkbox input[type="checkbox"]:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
   }
   tr {
     cursor: pointer;
@@ -119,6 +184,9 @@
   }
   tr.selected td {
     background: var(--bg-active);
+  }
+  tr.primary td {
+    border-left: 2px solid var(--accent);
   }
   .status-dot {
     display: inline-block;
