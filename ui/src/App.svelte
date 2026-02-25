@@ -44,17 +44,16 @@
   let loading = $derived(getLoading());
   let error = $derived(getError());
 
-  let primaryRun = $derived(runs.find((r) => r.id === primaryRunId) ?? null);
   let selectedRuns = $derived(runs.filter((r) => selectedRunIds.has(r.id)));
 
   /** Separate hardware (sys/) keys from training keys. */
   let trainingKeys = $derived(metricKeys.filter((k) => !k.startsWith("sys/")));
   let hardwareKeys = $derived(metricKeys.filter((k) => k.startsWith("sys/")));
 
-  /** Hardware metric key -> RunSeries[] across all selected runs (same overlay pattern as training). */
-  let hardwareByKey = $derived.by(() => {
+  /** Build RunSeries[] for a set of metric keys across selected runs. */
+  function buildSeriesMap(keys: string[]): Map<string, RunSeries[]> {
     const map = new Map<string, RunSeries[]>();
-    for (const key of hardwareKeys) {
+    for (const key of keys) {
       const runMap = metricData.get(key);
       if (!runMap) continue;
       const series: RunSeries[] = [];
@@ -72,7 +71,9 @@
       if (series.length > 0) map.set(key, series);
     }
     return map;
-  });
+  }
+
+  let hardwareByKey = $derived(buildSeriesMap(hardwareKeys));
 
   /** Group training metric keys by prefix (e.g. train/loss -> train). */
   let groupedKeys = $derived.by(() => {
@@ -86,30 +87,7 @@
     return groups;
   });
 
-  /** Reactive map of metric key -> RunSeries[] across all selected runs. */
-  let runsByKey = $derived.by(() => {
-    const map = new Map<string, RunSeries[]>();
-    for (const key of trainingKeys) {
-      const runMap = metricData.get(key);
-      if (!runMap) continue;
-      const series: RunSeries[] = [];
-      for (const run of selectedRuns) {
-        const data = runMap.get(run.id);
-        if (data) {
-          series.push({
-            runId: run.id,
-            runName: run.name || run.id.slice(0, 8),
-            color: colorForRun(run.id, colorOverrides),
-            data,
-          });
-        }
-      }
-      if (series.length > 0) {
-        map.set(key, series);
-      }
-    }
-    return map;
-  });
+  let runsByKey = $derived(buildSeriesMap(trainingKeys));
 
   /** Header text for the metrics section. */
   let metricsHeader = $derived.by(() => {

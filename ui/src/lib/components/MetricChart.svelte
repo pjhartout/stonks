@@ -9,7 +9,16 @@
   let container: HTMLDivElement;
   let chart: uPlot | null = null;
   let ro: ResizeObserver | null = null;
-  let lastRunCount = 0;
+  let lastSeriesKey = "";
+
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  /** Build a key that changes when series count or colors change (forces chart recreation). */
+  function seriesKey(rs: RunSeries[]): string {
+    return rs.map((r) => `${r.runId}:${r.color}`).join("|");
+  }
 
   function fmtVal(v: number): string {
     if (Number.isNaN(v)) return "\u2014";
@@ -55,7 +64,7 @@
             const run = runSeries[s - 1];
             const color = run?.color ?? "#888";
             const name = run?.runName ?? `Run ${s}`;
-            html += `<div class="tt-row"><span class="tt-swatch" style="background:${color}"></span>${name}: ${fmtVal(val)}</div>`;
+            html += `<div class="tt-row"><span class="tt-swatch" style="background:${escapeHtml(color)}"></span>${escapeHtml(name)}: ${fmtVal(val)}</div>`;
           }
           tooltip.innerHTML = html;
 
@@ -219,12 +228,12 @@
   $effect(() => {
     if (!container || !runs || runs.length === 0) return;
 
-    // If the number of runs changed, we must recreate (uPlot series config is immutable)
-    if (chart && runs.length === lastRunCount) {
+    const key = seriesKey(runs);
+    // Recreate if series count or colors changed (uPlot series config is immutable)
+    if (chart && key === lastSeriesKey) {
       const data = mergeRunSeries(runs);
       chart.setData(data);
     } else {
-      // Destroy old chart if exists
       if (chart) {
         ro?.disconnect();
         ro = null;
@@ -232,7 +241,7 @@
         chart = null;
       }
       createChart(container, runs);
-      lastRunCount = runs.length;
+      lastSeriesKey = key;
     }
   });
 </script>

@@ -149,20 +149,9 @@ export async function toggleRunSelection(id: string) {
   }
 }
 
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
 /** Recompute the union of metric keys across all selected runs. */
 function recomputeMetricKeys() {
-  const newKeys = [...metricData.keys()].sort();
-  if (!arraysEqual(newKeys, metricKeys)) {
-    metricKeys = newKeys;
-  }
+  metricKeys = [...metricData.keys()].sort();
 }
 
 async function loadMetricsForRun(runId: string) {

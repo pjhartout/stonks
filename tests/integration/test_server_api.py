@@ -121,6 +121,63 @@ class TestRunEndpoints:
         }
         assert set(run.keys()) == expected_fields
 
+    async def test_patch_run_rename(self, client):
+        """PATCH /api/runs/{id} updates the run name."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.patch(f"/api/runs/{run_id}", json={"name": "my-run"})
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "my-run"
+
+        # Verify the name persists
+        resp = await client.get(f"/api/runs/{run_id}")
+        assert resp.json()["name"] == "my-run"
+
+    async def test_patch_run_clear_name(self, client):
+        """PATCH /api/runs/{id} with name=null clears the name."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        # Set then clear
+        await client.patch(f"/api/runs/{run_id}", json={"name": "temp"})
+        resp = await client.patch(f"/api/runs/{run_id}", json={"name": None})
+        assert resp.status_code == 200
+        assert resp.json()["name"] is None
+
+    async def test_patch_run_empty_body_no_op(self, client):
+        """PATCH /api/runs/{id} with empty body does not change name."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        # Set a name first
+        await client.patch(f"/api/runs/{run_id}", json={"name": "keep-me"})
+        # Empty body should not clear it
+        resp = await client.patch(f"/api/runs/{run_id}", json={})
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "keep-me"
+
+    async def test_patch_run_name_too_long(self, client):
+        """PATCH /api/runs/{id} with name > 256 chars returns 422."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.patch(f"/api/runs/{run_id}", json={"name": "x" * 257})
+        assert resp.status_code == 422
+
+    async def test_patch_run_not_found(self, client):
+        """PATCH /api/runs/{id} returns 404 for unknown run."""
+        resp = await client.patch("/api/runs/nonexistent-id", json={"name": "x"})
+        assert resp.status_code == 404
+
 
 class TestMetricEndpoints:
     async def test_get_metric_keys(self, client):

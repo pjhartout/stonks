@@ -9,9 +9,8 @@ services:
       - STONKS_DB=/data/stonks.db
 
   trainer:
-    build:
-      context: .
-      dockerfile: Dockerfile.trainer
+    build: .
+    entrypoint: ["uv", "run", "python", "examples/fake_trainer.py"]
     volumes:
       - stonks-data:/data
     environment:

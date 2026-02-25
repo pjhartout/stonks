@@ -20,16 +20,8 @@ export async function fetchExperiments(): Promise<Experiment[]> {
   return get<Experiment[]>("/experiments");
 }
 
-export async function fetchExperiment(id: string): Promise<Experiment> {
-  return get<Experiment>(`/experiments/${id}`);
-}
-
 export async function fetchRuns(experimentId: string): Promise<Run[]> {
   return get<Run[]>(`/experiments/${experimentId}/runs`);
-}
-
-export async function fetchRun(runId: string): Promise<Run> {
-  return get<Run>(`/runs/${runId}`);
 }
 
 export async function fetchMetricKeys(runId: string): Promise<string[]> {
