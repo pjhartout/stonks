@@ -1,18 +1,36 @@
-import { fetchExperiments, fetchMetricKeys, fetchMetrics, fetchRuns } from "../api/client";
+import { fetchExperiments, fetchMetricKeys, fetchMetrics, fetchRuns, patchRun } from "../api/client";
 import { connectSSE } from "../api/sse";
 import type { Experiment, MetricSeries, Run } from "../types";
+import { MAX_SELECTED_RUNS } from "../utils/colors";
+
+const COLOR_STORAGE_KEY = "stonks:run-colors";
 
 // Reactive state using Svelte 5 runes
 let experiments = $state<Experiment[]>([]);
 let selectedExperimentId = $state<string | null>(null);
 let runs = $state<Run[]>([]);
-let selectedRunId = $state<string | null>(null);
+let selectedRunIds = $state<Set<string>>(new Set());
+let primaryRunId = $state<string | null>(null);
 let metricKeys = $state<string[]>([]);
-let metricData = $state<Map<string, MetricSeries>>(new Map());
+// Nested: metricKey -> runId -> MetricSeries
+let metricData = $state<Map<string, Map<string, MetricSeries>>>(new Map());
+let colorOverrides = $state<Map<string, string>>(loadColorOverrides());
 let loading = $state(false);
 let error = $state<string | null>(null);
 
 let sseCleanup: (() => void) | null = null;
+
+function loadColorOverrides(): Map<string, string> {
+  try {
+    const raw = localStorage.getItem(COLOR_STORAGE_KEY);
+    if (raw) return new Map(JSON.parse(raw));
+  } catch { /* ignore */ }
+  return new Map();
+}
+
+function saveColorOverrides() {
+  localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify([...colorOverrides]));
+}
 
 export function getExperiments() {
   return experiments;
@@ -26,8 +44,12 @@ export function getRuns() {
   return runs;
 }
 
-export function getSelectedRunId() {
-  return selectedRunId;
+export function getSelectedRunIds() {
+  return selectedRunIds;
+}
+
+export function getPrimaryRunId() {
+  return primaryRunId;
 }
 
 export function getMetricKeys() {
@@ -60,7 +82,8 @@ export async function loadExperiments() {
 
 export async function selectExperiment(id: string) {
   selectedExperimentId = id;
-  selectedRunId = null;
+  selectedRunIds = new Set();
+  primaryRunId = null;
   metricKeys = [];
   metricData = new Map();
   loading = true;
@@ -83,8 +106,8 @@ export async function selectExperiment(id: string) {
         );
       },
       onMetricsUpdate: async (event) => {
-        // Refetch metrics for the updated run if it's selected
-        if (selectedRunId === event.run_id) {
+        // Refetch metrics for any selected run that received an update
+        if (selectedRunIds.has(event.run_id)) {
           await loadMetricsForRun(event.run_id);
         }
       },
@@ -96,41 +119,97 @@ export async function selectExperiment(id: string) {
   }
 }
 
+/** Select a run as primary (row click). Also adds to selection set. */
 export async function selectRun(id: string) {
-  selectedRunId = id;
-  await loadMetricsForRun(id);
+  primaryRunId = id;
+  if (!selectedRunIds.has(id)) {
+    if (selectedRunIds.size >= MAX_SELECTED_RUNS) return;
+    selectedRunIds = new Set([...selectedRunIds, id]);
+    await loadMetricsForRun(id);
+  }
 }
 
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
+/** Toggle a run in/out of the comparison set (checkbox click). */
+export async function toggleRunSelection(id: string) {
+  if (selectedRunIds.has(id)) {
+    removeRunMetrics(id);
+    const next = new Set(selectedRunIds);
+    next.delete(id);
+    selectedRunIds = next;
+    // If we removed the primary, pick another or null
+    if (primaryRunId === id) {
+      const remaining = [...selectedRunIds];
+      primaryRunId = remaining.length > 0 ? remaining[0] : null;
+    }
+  } else {
+    if (selectedRunIds.size >= MAX_SELECTED_RUNS) return;
+    selectedRunIds = new Set([...selectedRunIds, id]);
+    if (!primaryRunId) primaryRunId = id;
+    await loadMetricsForRun(id);
   }
-  return true;
+}
+
+/** Recompute the union of metric keys across all selected runs. */
+function recomputeMetricKeys() {
+  metricKeys = [...metricData.keys()].sort();
 }
 
 async function loadMetricsForRun(runId: string) {
   try {
-    const newKeys = await fetchMetricKeys(runId);
-    const newData = new Map<string, MetricSeries>();
-    const promises = newKeys.map(async (key) => {
-      const series = await fetchMetrics(runId, key, 1000);
-      newData.set(key, series);
+    const downsample = Math.max(200, Math.floor(1000 / Math.max(selectedRunIds.size, 1)));
+    const runKeys = await fetchMetricKeys(runId);
+    const fetched = new Map<string, MetricSeries>();
+    const promises = runKeys.map(async (key) => {
+      const series = await fetchMetrics(runId, key, downsample);
+      fetched.set(key, series);
     });
     await Promise.all(promises);
 
-    // Update data FIRST so metricData.has(key) is true when keys are evaluated
-    for (const [key, series] of newData) {
-      metricData.set(key, series);
+    // Merge this run's data into the nested map (data first, then keys)
+    const updated = new Map(metricData);
+    for (const [key, series] of fetched) {
+      const existing = updated.get(key) ?? new Map();
+      existing.set(runId, series);
+      updated.set(key, existing);
     }
-    metricData = metricData;
+    metricData = updated;
 
-    // Only reassign keys if the set actually changed (avoids unnecessary DOM churn)
-    if (!arraysEqual(newKeys, metricKeys)) {
-      metricKeys = newKeys;
-    }
+    recomputeMetricKeys();
   } catch (e) {
     error = e instanceof Error ? e.message : "Failed to load metrics";
+  }
+}
+
+/** Remove a run's data from all metric keys. */
+function removeRunMetrics(runId: string) {
+  const updated = new Map<string, Map<string, MetricSeries>>();
+  for (const [key, runMap] of metricData) {
+    const filtered = new Map(runMap);
+    filtered.delete(runId);
+    if (filtered.size > 0) {
+      updated.set(key, filtered);
+    }
+  }
+  metricData = updated;
+  recomputeMetricKeys();
+}
+
+export function getColorOverrides() {
+  return colorOverrides;
+}
+
+export function setRunColor(runId: string, color: string) {
+  colorOverrides = new Map(colorOverrides);
+  colorOverrides.set(runId, color);
+  saveColorOverrides();
+}
+
+export async function renameRun(runId: string, name: string) {
+  try {
+    const updated = await patchRun(runId, { name: name || null });
+    runs = runs.map((r) => (r.id === runId ? { ...r, name: updated.name } : r));
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Failed to rename run";
   }
 }
 

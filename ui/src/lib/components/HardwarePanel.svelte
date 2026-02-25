@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { MetricSeries } from "../types";
+  import type { RunSeries } from "../types";
   import MetricChart from "./MetricChart.svelte";
 
-  let { metrics }: { metrics: Map<string, MetricSeries> } = $props();
+  let { metricsByKey }: { metricsByKey: Map<string, RunSeries[]> } = $props();
 
   let collapsed = $state(false);
 
@@ -14,7 +14,7 @@
 
   let gpuKeys = $derived.by(() => {
     const keys: string[] = [];
-    for (const k of metrics.keys()) {
+    for (const k of metricsByKey.keys()) {
       if (k.startsWith("sys/gpu")) keys.push(k);
     }
     keys.sort();
@@ -25,7 +25,7 @@
   let visibleGroups = $derived.by(() => {
     const groups: [string, string[]][] = [];
     for (const [label, keys] of subGroups) {
-      const present = keys.filter((k) => metrics.has(k));
+      const present = keys.filter((k) => metricsByKey.has(k));
       if (present.length > 0) groups.push([label, present]);
     }
     if (gpuKeys.length > 0) groups.push(["GPU", gpuKeys]);
@@ -33,12 +33,12 @@
   });
 </script>
 
-{#if metrics.size > 0}
+{#if metricsByKey.size > 0}
   <section class="hw-panel">
     <button class="hw-header" onclick={() => (collapsed = !collapsed)}>
       <span class="hw-chevron" class:rotated={!collapsed}>&#9654;</span>
       <h3>System Resources</h3>
-      <span class="hw-badge">{metrics.size} metrics</span>
+      <span class="hw-badge">{metricsByKey.size} metrics</span>
     </button>
 
     {#if !collapsed}
@@ -48,8 +48,8 @@
             <h4 class="hw-subgroup-label">{label}</h4>
             <div class="charts-grid">
               {#each keys as key (key)}
-                {#if metrics.has(key)}
-                  <MetricChart series={metrics.get(key)!} title={key} />
+                {#if metricsByKey.has(key)}
+                  <MetricChart runs={metricsByKey.get(key)!} title={key} />
                 {/if}
               {/each}
             </div>

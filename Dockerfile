@@ -1,10 +1,10 @@
 # Stage 1: Build frontend
-FROM node:22-slim AS ui-build
+FROM oven/bun:1 AS ui-build
 WORKDIR /app
 COPY ui/ ui/
 COPY stonks/server/ stonks/server/
 WORKDIR /app/ui
-RUN npm install && npm run build
+RUN bun install && bun run build
 
 # Stage 2: Python runtime
 FROM python:3.11-slim

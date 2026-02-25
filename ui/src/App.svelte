@@ -6,18 +6,25 @@
   import ConfigComparison from "./lib/components/ConfigComparison.svelte";
   import EmptyState from "./lib/components/EmptyState.svelte";
   import HardwarePanel from "./lib/components/HardwarePanel.svelte";
+  import type { RunSeries } from "./lib/types";
+  import { colorForRun } from "./lib/utils/colors";
   import {
     getExperiments,
     getSelectedExperimentId,
     getRuns,
-    getSelectedRunId,
+    getSelectedRunIds,
+    getPrimaryRunId,
     getMetricKeys,
     getMetricData,
+    getColorOverrides,
     getLoading,
     getError,
     loadExperiments,
     selectExperiment,
     selectRun,
+    toggleRunSelection,
+    setRunColor,
+    renameRun,
     cleanup,
   } from "./lib/stores/experiments.svelte";
 
@@ -29,27 +36,44 @@
   let experiments = $derived(getExperiments());
   let selectedExperimentId = $derived(getSelectedExperimentId());
   let runs = $derived(getRuns());
-  let selectedRunId = $derived(getSelectedRunId());
+  let selectedRunIds = $derived(getSelectedRunIds());
+  let primaryRunId = $derived(getPrimaryRunId());
   let metricKeys = $derived(getMetricKeys());
   let metricData = $derived(getMetricData());
+  let colorOverrides = $derived(getColorOverrides());
   let loading = $derived(getLoading());
   let error = $derived(getError());
 
-  let selectedRun = $derived(runs.find((r) => r.id === selectedRunId) ?? null);
+  let selectedRuns = $derived(runs.filter((r) => selectedRunIds.has(r.id)));
 
   /** Separate hardware (sys/) keys from training keys. */
   let trainingKeys = $derived(metricKeys.filter((k) => !k.startsWith("sys/")));
   let hardwareKeys = $derived(metricKeys.filter((k) => k.startsWith("sys/")));
 
-  /** Hardware metric data filtered from metricData. */
-  let hardwareData = $derived.by(() => {
-    const map = new Map<string, import("./lib/types").MetricSeries>();
-    for (const key of hardwareKeys) {
-      const series = metricData.get(key);
-      if (series) map.set(key, series);
+  /** Build RunSeries[] for a set of metric keys across selected runs. */
+  function buildSeriesMap(keys: string[]): Map<string, RunSeries[]> {
+    const map = new Map<string, RunSeries[]>();
+    for (const key of keys) {
+      const runMap = metricData.get(key);
+      if (!runMap) continue;
+      const series: RunSeries[] = [];
+      for (const run of selectedRuns) {
+        const data = runMap.get(run.id);
+        if (data) {
+          series.push({
+            runId: run.id,
+            runName: run.name || run.id.slice(0, 8),
+            color: colorForRun(run.id, colorOverrides),
+            data,
+          });
+        }
+      }
+      if (series.length > 0) map.set(key, series);
     }
     return map;
-  });
+  }
+
+  let hardwareByKey = $derived(buildSeriesMap(hardwareKeys));
 
   /** Group training metric keys by prefix (e.g. train/loss -> train). */
   let groupedKeys = $derived.by(() => {
@@ -61,6 +85,18 @@
       groups.get(group)!.push(key);
     }
     return groups;
+  });
+
+  let runsByKey = $derived(buildSeriesMap(trainingKeys));
+
+  /** Header text for the metrics section. */
+  let metricsHeader = $derived.by(() => {
+    if (selectedRuns.length === 0) return "";
+    if (selectedRuns.length === 1) {
+      const r = selectedRuns[0];
+      return `Metrics \u2014 ${r.name || r.id.slice(0, 8)}`;
+    }
+    return `Comparing ${selectedRuns.length} runs`;
   });
 </script>
 
@@ -91,17 +127,22 @@
           <h2>Runs</h2>
           <RunTable
             {runs}
-            selectedId={selectedRunId}
+            selectedIds={selectedRunIds}
+            primaryId={primaryRunId}
+            {colorOverrides}
             onSelect={selectRun}
+            onToggle={toggleRunSelection}
+            onRename={renameRun}
+            onColorChange={setRunColor}
           />
         </section>
 
-        {#if selectedRun}
+        {#if selectedRuns.length > 0}
           <section class="metrics-section">
-            <h2>Metrics &mdash; {selectedRun.name || selectedRun.id.slice(0, 8)}</h2>
+            <h2>{metricsHeader}</h2>
 
-            {#if hardwareKeys.length > 0}
-              <HardwarePanel metrics={hardwareData} />
+            {#if hardwareByKey.size > 0}
+              <HardwarePanel metricsByKey={hardwareByKey} />
             {/if}
 
             {#if metricKeys.length === 0}
@@ -115,9 +156,9 @@
                   <h3 class="group-label">{group}</h3>
                   <div class="charts-grid">
                     {#each keys as key (key)}
-                      {#if metricData.has(key)}
+                      {#if runsByKey.has(key)}
                         <MetricChart
-                          series={metricData.get(key)!}
+                          runs={runsByKey.get(key)!}
                           title={key}
                         />
                       {/if}
@@ -126,7 +167,7 @@
                 </div>
               {/each}
 
-              <ConfigComparison runs={[selectedRun]} />
+              <ConfigComparison runs={selectedRuns} />
             {/if}
           </section>
         {/if}

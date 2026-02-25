@@ -1,32 +1,33 @@
 <script lang="ts">
-  import type { MetricSeries } from "../types";
+  import type { RunSeries } from "../types";
+  import { mergeRunSeries } from "../utils/merge";
   import uPlot from "uplot";
   import "uplot/dist/uPlot.min.css";
 
-  let { series, title }: { series: MetricSeries; title: string } = $props();
+  let { runs, title }: { runs: RunSeries[]; title: string } = $props();
 
   let container: HTMLDivElement;
   let chart: uPlot | null = null;
   let ro: ResizeObserver | null = null;
+  let lastSeriesKey = "";
+
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  /** Build a key that changes when series count or colors change (forces chart recreation). */
+  function seriesKey(rs: RunSeries[]): string {
+    return rs.map((r) => `${r.runId}:${r.color}`).join("|");
+  }
 
   function fmtVal(v: number): string {
-    if (Number.isNaN(v)) return "—";
+    if (Number.isNaN(v)) return "\u2014";
     if (Number.isInteger(v)) return v.toString();
     if (Math.abs(v) >= 1) return v.toFixed(4);
-    // small floats: show enough significant digits
     return v.toPrecision(4);
   }
 
-  function makeData(data: MetricSeries): [Float64Array, Float64Array] {
-    const steps = new Float64Array(data.steps);
-    const values = new Float64Array(data.values.length);
-    for (let i = 0; i < data.values.length; i++) {
-      values[i] = data.values[i] ?? NaN;
-    }
-    return [steps, values];
-  }
-
-  function cursorTooltipPlugin(): uPlot.Plugin {
+  function cursorTooltipPlugin(runSeries: RunSeries[]): uPlot.Plugin {
     let tooltip: HTMLDivElement;
     let over: HTMLElement;
 
@@ -56,13 +57,19 @@
 
           const i = idx as number;
           const step = u.data[0][i];
-          const val = u.data[1][i] ?? NaN;
-          tooltip.textContent = `Step ${step}  ·  ${fmtVal(val)}`;
+          let html = `<div class="tt-step">Step ${step}</div>`;
+          for (let s = 1; s < u.data.length; s++) {
+            const val = u.data[s][i] ?? NaN;
+            if (Number.isNaN(val)) continue;
+            const run = runSeries[s - 1];
+            const color = run?.color ?? "#888";
+            const name = run?.runName ?? `Run ${s}`;
+            html += `<div class="tt-row"><span class="tt-swatch" style="background:${escapeHtml(color)}"></span>${escapeHtml(name)}: ${fmtVal(val)}</div>`;
+          }
+          tooltip.innerHTML = html;
 
-          // Position tooltip near cursor, offset slightly
           const ttWidth = tooltip.offsetWidth;
           const plotWidth = over.clientWidth;
-          // Flip to left side if near right edge
           if (left + 12 + ttWidth > plotWidth) {
             tooltip.style.left = `${left - ttWidth - 8}px`;
           } else {
@@ -86,7 +93,6 @@
         init: (u: uPlot) => {
           const over = u.over;
 
-          // Dim overlays that darken the area outside the selection
           dimLeft = document.createElement("div");
           dimLeft.className = "sel-dim";
           dimLeft.style.display = "none";
@@ -123,7 +129,6 @@
             return;
           }
 
-          // Dim the regions outside the selection
           dimLeft.style.display = "block";
           dimLeft.style.width = `${sel.left}px`;
           dimLeft.style.height = `${overHeight}px`;
@@ -135,7 +140,6 @@
           dimRight.style.height = `${overHeight}px`;
           dimRight.style.top = "0";
 
-          // Range labels
           const leftVal = u.posToVal(sel.left, "x");
           const rightVal = u.posToVal(sel.left + sel.width, "x");
 
@@ -153,15 +157,25 @@
     };
   }
 
-  function createChart(el: HTMLDivElement, data: MetricSeries) {
-    const [steps, values] = makeData(data);
+  function createChart(el: HTMLDivElement, runSeries: RunSeries[]) {
+    const data = mergeRunSeries(runSeries);
+
+    const seriesConfig: uPlot.Series[] = [
+      { label: "Step" },
+      ...runSeries.map((r) => ({
+        label: r.runName,
+        stroke: r.color,
+        width: 1.5,
+        fill: undefined,
+      })),
+    ];
 
     const opts: uPlot.Options = {
       width: el.clientWidth,
-      height: 200,
+      height: 300,
       cursor: { show: true, drag: { x: true, y: false } },
-      legend: { show: false },
-      plugins: [cursorTooltipPlugin(), selectionRangePlugin()],
+      legend: { show: runSeries.length > 1 },
+      plugins: [cursorTooltipPlugin(runSeries), selectionRangePlugin()],
       scales: {
         x: { time: false },
       },
@@ -182,24 +196,15 @@
           size: 60,
         },
       ],
-      series: [
-        { label: "Step" },
-        {
-          label: data.key,
-          stroke: "#6366f1",
-          width: 1.5,
-          fill: "#6366f120",
-        },
-      ],
+      series: seriesConfig,
     };
 
-    chart = new uPlot(opts, [steps, values], el);
+    chart = new uPlot(opts, data, el);
 
-    // Resize chart when container width changes
     ro = new ResizeObserver((entries) => {
       if (chart) {
         const w = entries[0].contentRect.width;
-        if (w > 0) chart.setSize({ width: w, height: 200 });
+        if (w > 0) chart.setSize({ width: w, height: 300 });
       }
     });
     ro.observe(el);
@@ -219,15 +224,24 @@
     };
   });
 
-  // Update data reactively without destroying the chart
+  // Update data or recreate chart when runs change
   $effect(() => {
-    if (!container || !series || series.steps.length === 0) return;
+    if (!container || !runs || runs.length === 0) return;
 
-    if (chart) {
-      const [steps, values] = makeData(series);
-      chart.setData([steps, values]);
+    const key = seriesKey(runs);
+    // Recreate if series count or colors changed (uPlot series config is immutable)
+    if (chart && key === lastSeriesKey) {
+      const data = mergeRunSeries(runs);
+      chart.setData(data);
     } else {
-      createChart(container, series);
+      if (chart) {
+        ro?.disconnect();
+        ro = null;
+        chart.destroy();
+        chart = null;
+      }
+      createChart(container, runs);
+      lastSeriesKey = key;
     }
   });
 </script>
@@ -260,7 +274,7 @@
     position: absolute;
     z-index: 10;
     pointer-events: none;
-    padding: 3px 8px;
+    padding: 6px 10px;
     font-size: 0.75rem;
     font-family: var(--font-mono, monospace);
     background: var(--bg-surface, #1e1e2e);
@@ -269,6 +283,34 @@
     border-radius: 4px;
     white-space: nowrap;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+  .chart-container :global(.tt-step) {
+    margin-bottom: 2px;
+    color: var(--text-muted, #a6adc8);
+    font-size: 0.7rem;
+  }
+  .chart-container :global(.tt-row) {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .chart-container :global(.tt-swatch) {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* uPlot legend styling for multi-run */
+  .chart-container :global(.u-legend) {
+    font-size: 0.7rem;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-muted, #a6adc8);
+    padding: 4px 0 0;
+  }
+  .chart-container :global(.u-legend .u-series) {
+    padding: 1px 6px;
   }
 
   /* Selection range labels */

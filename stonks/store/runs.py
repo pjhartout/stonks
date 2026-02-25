@@ -239,6 +239,21 @@ def get_max_step(conn: sqlite3.Connection, run_id: str) -> int:
     return row["max_step"]
 
 
+def update_run_name(conn: sqlite3.Connection, run_id: str, name: str | None) -> None:
+    """Update the display name for a run.
+
+    Args:
+        conn: Active database connection.
+        run_id: The run to update.
+        name: New display name, or None to clear.
+    """
+    conn.execute(
+        "UPDATE runs SET name = ? WHERE id = ?",
+        (name, run_id),
+    )
+    conn.commit()
+
+
 def update_run_tags(conn: sqlite3.Connection, run_id: str, tags: list[str]) -> None:
     """Update the tags for a run.
 
