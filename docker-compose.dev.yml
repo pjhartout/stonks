@@ -1,0 +1,73 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: uv run stonks serve --reload --host 0.0.0.0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./stonks:/app/stonks
+      - stonks-data:/data
+    environment:
+      - STONKS_DB=/data/stonks.db
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: bun run --cwd ui dev --host 0.0.0.0
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./ui/src:/app/ui/src
+      - ./ui/public:/app/ui/public
+      - ./ui/index.html:/app/ui/index.html
+      - ./ui/vite.config.ts:/app/ui/vite.config.ts
+      - ./ui/svelte.config.js:/app/ui/svelte.config.js
+      - ./ui/tsconfig.json:/app/ui/tsconfig.json
+    environment:
+      - API_TARGET=http://backend:8000
+    depends_on:
+      - backend
+
+  trainer-resnet:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: uv run python examples/fake_trainer.py
+    volumes:
+      - ./stonks:/app/stonks
+      - ./examples:/app/examples
+      - stonks-data:/data
+    environment:
+      - STONKS_DB=/data/stonks.db
+      - EXPERIMENT=cifar10-ablation
+      - RUN_NAME=resnet18-adamw-lr3e4
+      - TRAIN_EPOCHS=50
+      - STEPS_PER_EPOCH=20
+      - STEP_DELAY=0.3
+    depends_on:
+      - backend
+
+  trainer-resnet-sgd:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: uv run python examples/fake_trainer.py
+    volumes:
+      - ./stonks:/app/stonks
+      - ./examples:/app/examples
+      - stonks-data:/data
+    environment:
+      - STONKS_DB=/data/stonks.db
+      - EXPERIMENT=cifar10-ablation
+      - RUN_NAME=resnet18-sgd-lr1e2
+      - TRAIN_EPOCHS=50
+      - STEPS_PER_EPOCH=20
+      - STEP_DELAY=0.5
+    depends_on:
+      - backend
+
+volumes:
+  stonks-data:

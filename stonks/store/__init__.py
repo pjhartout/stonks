@@ -22,6 +22,7 @@ from stonks.store.runs import (
     reopen_run,
     update_heartbeat,
     update_run_config,
+    update_run_name,
     update_run_notes,
     update_run_tags,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "reopen_run",
     "update_heartbeat",
     "update_run_config",
+    "update_run_name",
     "update_run_notes",
     "update_run_tags",
 ]

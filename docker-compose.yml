@@ -1,9 +1,27 @@
 services:
-  stonks:
+  dashboard:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/data
+      - stonks-data:/data
     environment:
       - STONKS_DB=/data/stonks.db
+
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile.trainer
+    volumes:
+      - stonks-data:/data
+    environment:
+      - STONKS_DB=/data/stonks.db
+      - EXPERIMENT=debug-experiment
+      - TRAIN_EPOCHS=50
+      - STEPS_PER_EPOCH=20
+      - STEP_DELAY=0.3
+    depends_on:
+      - dashboard
+
+volumes:
+  stonks-data:

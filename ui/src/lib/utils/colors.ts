@@ -15,8 +15,10 @@ export const MAX_SELECTED_RUNS = 8;
 /**
  * Assign a stable color to a run based on its ID.
  * Uses a simple hash so the same run always gets the same color.
+ * If an override map is provided, it takes precedence.
  */
-export function colorForRun(runId: string): string {
+export function colorForRun(runId: string, overrides?: Map<string, string>): string {
+  if (overrides?.has(runId)) return overrides.get(runId)!;
   let hash = 0;
   for (let i = 0; i < runId.length; i++) {
     hash = (hash * 31 + runId.charCodeAt(i)) | 0;

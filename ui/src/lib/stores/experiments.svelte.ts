@@ -1,7 +1,9 @@
-import { fetchExperiments, fetchMetricKeys, fetchMetrics, fetchRuns } from "../api/client";
+import { fetchExperiments, fetchMetricKeys, fetchMetrics, fetchRuns, patchRun } from "../api/client";
 import { connectSSE } from "../api/sse";
 import type { Experiment, MetricSeries, Run } from "../types";
 import { MAX_SELECTED_RUNS } from "../utils/colors";
+
+const COLOR_STORAGE_KEY = "stonks:run-colors";
 
 // Reactive state using Svelte 5 runes
 let experiments = $state<Experiment[]>([]);
@@ -12,10 +14,23 @@ let primaryRunId = $state<string | null>(null);
 let metricKeys = $state<string[]>([]);
 // Nested: metricKey -> runId -> MetricSeries
 let metricData = $state<Map<string, Map<string, MetricSeries>>>(new Map());
+let colorOverrides = $state<Map<string, string>>(loadColorOverrides());
 let loading = $state(false);
 let error = $state<string | null>(null);
 
 let sseCleanup: (() => void) | null = null;
+
+function loadColorOverrides(): Map<string, string> {
+  try {
+    const raw = localStorage.getItem(COLOR_STORAGE_KEY);
+    if (raw) return new Map(JSON.parse(raw));
+  } catch { /* ignore */ }
+  return new Map();
+}
+
+function saveColorOverrides() {
+  localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify([...colorOverrides]));
+}
 
 export function getExperiments() {
   return experiments;
@@ -109,8 +124,7 @@ export async function selectRun(id: string) {
   primaryRunId = id;
   if (!selectedRunIds.has(id)) {
     if (selectedRunIds.size >= MAX_SELECTED_RUNS) return;
-    selectedRunIds.add(id);
-    selectedRunIds = selectedRunIds;
+    selectedRunIds = new Set([...selectedRunIds, id]);
     await loadMetricsForRun(id);
   }
 }
@@ -119,8 +133,9 @@ export async function selectRun(id: string) {
 export async function toggleRunSelection(id: string) {
   if (selectedRunIds.has(id)) {
     removeRunMetrics(id);
-    selectedRunIds.delete(id);
-    selectedRunIds = selectedRunIds;
+    const next = new Set(selectedRunIds);
+    next.delete(id);
+    selectedRunIds = next;
     // If we removed the primary, pick another or null
     if (primaryRunId === id) {
       const remaining = [...selectedRunIds];
@@ -128,8 +143,7 @@ export async function toggleRunSelection(id: string) {
     }
   } else {
     if (selectedRunIds.size >= MAX_SELECTED_RUNS) return;
-    selectedRunIds.add(id);
-    selectedRunIds = selectedRunIds;
+    selectedRunIds = new Set([...selectedRunIds, id]);
     if (!primaryRunId) primaryRunId = id;
     await loadMetricsForRun(id);
   }
@@ -145,13 +159,7 @@ function arraysEqual(a: string[], b: string[]): boolean {
 
 /** Recompute the union of metric keys across all selected runs. */
 function recomputeMetricKeys() {
-  const keySet = new Set<string>();
-  for (const runMap of metricData.values()) {
-    for (const key of runMap.keys()) {
-      keySet.add(key);
-    }
-  }
-  const newKeys = [...keySet].sort();
+  const newKeys = [...metricData.keys()].sort();
   if (!arraysEqual(newKeys, metricKeys)) {
     metricKeys = newKeys;
   }
@@ -169,13 +177,13 @@ async function loadMetricsForRun(runId: string) {
     await Promise.all(promises);
 
     // Merge this run's data into the nested map (data first, then keys)
+    const updated = new Map(metricData);
     for (const [key, series] of fetched) {
-      if (!metricData.has(key)) {
-        metricData.set(key, new Map());
-      }
-      metricData.get(key)!.set(runId, series);
+      const existing = updated.get(key) ?? new Map();
+      existing.set(runId, series);
+      updated.set(key, existing);
     }
-    metricData = metricData;
+    metricData = updated;
 
     recomputeMetricKeys();
   } catch (e) {
@@ -185,14 +193,35 @@ async function loadMetricsForRun(runId: string) {
 
 /** Remove a run's data from all metric keys. */
 function removeRunMetrics(runId: string) {
+  const updated = new Map<string, Map<string, MetricSeries>>();
   for (const [key, runMap] of metricData) {
-    runMap.delete(runId);
-    if (runMap.size === 0) {
-      metricData.delete(key);
+    const filtered = new Map(runMap);
+    filtered.delete(runId);
+    if (filtered.size > 0) {
+      updated.set(key, filtered);
     }
   }
-  metricData = metricData;
+  metricData = updated;
   recomputeMetricKeys();
+}
+
+export function getColorOverrides() {
+  return colorOverrides;
+}
+
+export function setRunColor(runId: string, color: string) {
+  colorOverrides = new Map(colorOverrides);
+  colorOverrides.set(runId, color);
+  saveColorOverrides();
+}
+
+export async function renameRun(runId: string, name: string) {
+  try {
+    const updated = await patchRun(runId, { name: name || null });
+    runs = runs.map((r) => (r.id === runId ? { ...r, name: updated.name } : r));
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Failed to rename run";
+  }
 }
 
 export function cleanup() {

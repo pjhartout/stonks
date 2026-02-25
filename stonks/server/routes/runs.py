@@ -5,9 +5,10 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from stonks.server.dependencies import get_db
-from stonks.store import get_run_by_id, list_runs
+from stonks.store import get_run_by_id, list_runs, update_run_name
 
 router = APIRouter(tags=["runs"])
 
@@ -51,6 +52,34 @@ def get_experiment_runs(
     """
     runs = list_runs(conn, experiment_id=experiment_id)
     return [_run_to_dict(r) for r in runs]
+
+
+class RunPatch(BaseModel):
+    """Patchable fields on a run."""
+
+    name: str | None = None
+
+
+@router.patch("/runs/{run_id}")
+def patch_run(run_id: str, body: RunPatch, conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """Update mutable display fields on a run.
+
+    Args:
+        run_id: The run UUID.
+        body: Fields to update.
+
+    Returns:
+        Updated run dict.
+
+    Raises:
+        HTTPException: If run not found.
+    """
+    run = get_run_by_id(conn, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    update_run_name(conn, run_id, body.name)
+    run = get_run_by_id(conn, run_id)
+    return _run_to_dict(run)
 
 
 @router.get("/runs/{run_id}")

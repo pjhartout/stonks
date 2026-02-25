@@ -157,13 +157,13 @@
         label: r.runName,
         stroke: r.color,
         width: 1.5,
-        fill: r.color + "20",
+        fill: undefined,
       })),
     ];
 
     const opts: uPlot.Options = {
       width: el.clientWidth,
-      height: 200,
+      height: 300,
       cursor: { show: true, drag: { x: true, y: false } },
       legend: { show: runSeries.length > 1 },
       plugins: [cursorTooltipPlugin(runSeries), selectionRangePlugin()],
@@ -195,7 +195,7 @@
     ro = new ResizeObserver((entries) => {
       if (chart) {
         const w = entries[0].contentRect.width;
-        if (w > 0) chart.setSize({ width: w, height: 200 });
+        if (w > 0) chart.setSize({ width: w, height: 300 });
       }
     });
     ro.observe(el);

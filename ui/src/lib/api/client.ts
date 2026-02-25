@@ -36,6 +36,21 @@ export async function fetchMetricKeys(runId: string): Promise<string[]> {
   return get<string[]>(`/runs/${runId}/metric-keys`);
 }
 
+export async function patchRun(
+  runId: string,
+  fields: { name?: string | null },
+): Promise<Run> {
+  const resp = await fetch(`${BASE}/runs/${runId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!resp.ok) {
+    throw new Error(`API error: ${resp.status} ${resp.statusText}`);
+  }
+  return resp.json();
+}
+
 export async function fetchMetrics(
   runId: string,
   key: string,
