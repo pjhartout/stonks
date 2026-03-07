@@ -347,6 +347,34 @@ def gc_command(args: argparse.Namespace) -> None:
     conn.close()
 
 
+def demo_command(args: argparse.Namespace) -> None:
+    """Run the stonks demo with generated sample data.
+
+    Args:
+        args: Parsed CLI arguments with db, host, port, no_serve.
+    """
+    import webbrowser
+
+    from stonks.demo import generate_demo_data, get_default_demo_db
+
+    db_path = args.db or get_default_demo_db()
+    generate_demo_data(db_path)
+
+    if args.no_serve:
+        print(f"Demo data written to: {db_path}")
+        return
+
+    url = f"http://{args.host}:{args.port}"
+    print(f"\nDemo database: {db_path}")
+    print(f"Dashboard:     {url}")
+    print("Press Ctrl+C to stop.\n")
+
+    webbrowser.open(url)
+
+    app = create_app(db_path)
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
 def main() -> None:
     """Main CLI entry point."""
     setup_logging()
@@ -453,6 +481,33 @@ def main() -> None:
         help="Skip confirmation prompt",
     )
 
+    # demo
+    demo_parser = subparsers.add_parser("demo", help="Generate sample data and start dashboard")
+    demo_parser.add_argument(
+        "--db",
+        type=str,
+        default=None,
+        help="Database path for demo data (default: temp directory)",
+    )
+    demo_parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)",
+    )
+    demo_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind to (default: 8000)",
+    )
+    demo_parser.add_argument(
+        "--no-serve",
+        action="store_true",
+        default=False,
+        help="Only generate data, don't start the server",
+    )
+
     args = parser.parse_args()
 
     commands = {
@@ -463,6 +518,7 @@ def main() -> None:
         "delete": delete_command,
         "export": export_command,
         "gc": gc_command,
+        "demo": demo_command,
     }
 
     if args.command in commands:
