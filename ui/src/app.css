@@ -1,4 +1,5 @@
 :root {
+  /* Dark theme (Catppuccin Mocha-inspired) - default */
   --bg: #0f1117;
   --bg-surface: #1a1d27;
   --bg-hover: #242836;
@@ -17,6 +18,43 @@
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   --radius: 6px;
   --radius-lg: 10px;
+  /* Chart-specific vars */
+  --chart-grid: rgba(46, 51, 72, 0.27);
+  --chart-grid-strong: rgba(46, 51, 72, 0.53);
+  --chart-axis: #5c6078;
+  --chart-select: rgba(99, 102, 241, 0.15);
+  --chart-select-border: rgba(99, 102, 241, 0.6);
+  --chart-dim: rgba(0, 0, 0, 0.35);
+  --swatch-border: rgba(255, 255, 255, 0.15);
+  --swatch-border-hover: rgba(255, 255, 255, 0.4);
+  --shadow-tooltip: rgba(0, 0, 0, 0.3);
+}
+
+/* Light theme (Catppuccin Latte-inspired) */
+html.light {
+  --bg: #eff1f5;
+  --bg-surface: #e6e9ef;
+  --bg-hover: #dce0e8;
+  --bg-active: #ccd0da;
+  --border: #bcc0cc;
+  --text: #4c4f69;
+  --text-muted: #6c6f85;
+  --text-dim: #8c8fa1;
+  --accent: #7287fd;
+  --accent-hover: #5c6ce8;
+  --green: #40a02b;
+  --red: #d20f39;
+  --yellow: #df8e1d;
+  --orange: #fe640b;
+  --chart-grid: rgba(188, 192, 204, 0.4);
+  --chart-grid-strong: rgba(188, 192, 204, 0.7);
+  --chart-axis: #6c6f85;
+  --chart-select: rgba(114, 135, 253, 0.15);
+  --chart-select-border: rgba(114, 135, 253, 0.6);
+  --chart-dim: rgba(255, 255, 255, 0.4);
+  --swatch-border: rgba(0, 0, 0, 0.15);
+  --swatch-border-hover: rgba(0, 0, 0, 0.35);
+  --shadow-tooltip: rgba(0, 0, 0, 0.1);
 }
 
 * {
@@ -55,5 +93,5 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-dim);
+  background: var(--text-muted);
 }
