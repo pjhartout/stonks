@@ -321,3 +321,80 @@ class TestMetricEndpoints:
 
         resp = await client.get(f"/api/runs/{run_id}/metrics")
         assert resp.status_code == 422
+
+
+class TestDeleteEndpoints:
+    async def test_delete_run(self, client):
+        """DELETE /api/runs/{id} removes the run and returns 204."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.delete(f"/api/runs/{run_id}")
+        assert resp.status_code == 204
+
+        # Verify it's gone
+        resp = await client.get(f"/api/runs/{run_id}")
+        assert resp.status_code == 404
+
+    async def test_delete_run_not_found(self, client):
+        """DELETE /api/runs/{id} returns 404 for unknown run."""
+        resp = await client.delete("/api/runs/nonexistent-id")
+        assert resp.status_code == 404
+
+    async def test_delete_run_removes_metrics(self, client):
+        """Deleting a run also removes its metrics."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        # Verify metrics exist before deletion
+        keys_resp = await client.get(f"/api/runs/{run_id}/metric-keys")
+        assert keys_resp.status_code == 200
+        assert len(keys_resp.json()) > 0
+
+        # Delete the run
+        resp = await client.delete(f"/api/runs/{run_id}")
+        assert resp.status_code == 204
+
+        # Metrics endpoint should return 404 since run is gone
+        keys_resp = await client.get(f"/api/runs/{run_id}/metric-keys")
+        assert keys_resp.status_code == 404
+
+    async def test_delete_experiment(self, client):
+        """DELETE /api/experiments/{id} removes experiment and returns 204."""
+        resp = await client.get("/api/experiments")
+        beta = next(e for e in resp.json() if e["name"] == "exp-beta")
+
+        resp = await client.delete(f"/api/experiments/{beta['id']}")
+        assert resp.status_code == 204
+
+        # Verify it's gone
+        resp = await client.get(f"/api/experiments/{beta['id']}")
+        assert resp.status_code == 404
+
+    async def test_delete_experiment_not_found(self, client):
+        """DELETE /api/experiments/{id} returns 404 for unknown experiment."""
+        resp = await client.delete("/api/experiments/nonexistent-id")
+        assert resp.status_code == 404
+
+    async def test_delete_experiment_cascades_to_runs(self, client):
+        """Deleting an experiment removes its runs and their metrics."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+
+        # Get run IDs before deletion
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_ids = [r["id"] for r in runs_resp.json()]
+        assert len(run_ids) > 0
+
+        # Delete the experiment
+        resp = await client.delete(f"/api/experiments/{alpha['id']}")
+        assert resp.status_code == 204
+
+        # Verify runs are gone
+        for run_id in run_ids:
+            resp = await client.get(f"/api/runs/{run_id}")
+            assert resp.status_code == 404

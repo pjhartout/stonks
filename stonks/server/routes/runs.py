@@ -5,10 +5,12 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from stonks.server.dependencies import get_db
 from stonks.store import (
+    delete_run,
     get_run_by_id,
     list_runs,
     update_run_name,
@@ -112,3 +114,22 @@ def get_run(run_id: str, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return _run_to_dict(run)
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+def delete_run_endpoint(run_id: str, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    """Delete a run and its metrics.
+
+    Args:
+        run_id: The run UUID.
+
+    Returns:
+        204 No Content on success.
+
+    Raises:
+        HTTPException: If run not found.
+    """
+    deleted = delete_run(conn, run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return Response(status_code=204)
