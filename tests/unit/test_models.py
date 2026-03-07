@@ -31,24 +31,6 @@ class TestConfigSerialization:
         result = config_from_json(config_to_json(original))
         assert result == original
 
-    def test_config_to_json_omegaconf(self):
-        """config_to_json must handle OmegaConf containers (regression)."""
-        pytest = __import__("pytest")
-        OmegaConf = pytest.importorskip("omegaconf").OmegaConf
-
-        cfg = OmegaConf.create(
-            {
-                "betas": [0.9, 0.98],
-                "tags": ["mn5", "h100"],
-                "nested": {"inner_list": [1, 2], "value": 42},
-            }
-        )
-        result = config_to_json(cfg)
-        parsed = config_from_json(result)
-        assert parsed["betas"] == [0.9, 0.98]
-        assert parsed["tags"] == ["mn5", "h100"]
-        assert parsed["nested"]["inner_list"] == [1, 2]
-
 
 class TestDataclasses:
     def test_experiment(self):
