@@ -11,7 +11,7 @@ from stonks.server.app import create_app
 def sse_app(db_path):
     """Create a FastAPI app seeded with data for SSE tests."""
     db = str(db_path)
-    with stonks.start_run("sse-exp", db=db) as run:
+    with stonks.start_run("sse-exp", save_dir=db) as run:
         run.log({"loss": 1.0}, step=0)
 
     return create_app(db)

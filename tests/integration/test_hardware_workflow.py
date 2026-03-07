@@ -13,7 +13,7 @@ class TestHardwareWorkflow:
 
         with stonks.start_run(
             "hw-test",
-            db=db,
+            save_dir=db,
             hardware=True,
             hardware_interval=1.0,
             hardware_gpu=False,
@@ -36,7 +36,7 @@ class TestHardwareWorkflow:
         """hardware=False (default) should produce no sys/ keys."""
         db = str(db_path)
 
-        with stonks.start_run("no-hw-test", db=db) as run:
+        with stonks.start_run("no-hw-test", save_dir=db) as run:
             run.log({"train/loss": 0.5}, step=0)
 
         conn = create_connection(db)
