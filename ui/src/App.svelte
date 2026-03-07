@@ -38,12 +38,25 @@
     removeTagFilter,
     setSearchQuery,
     clearAllFilters,
+    syncToUrl,
+    restoreFromUrl,
     cleanup,
   } from "./lib/stores/experiments.svelte";
 
+  let initialized = $state(false);
+
   onMount(() => {
-    loadExperiments();
+    loadExperiments().then(() => restoreFromUrl()).then(() => { initialized = true; });
     return cleanup;
+  });
+
+  // Sync selection state to URL whenever it changes (after initial load)
+  $effect(() => {
+    const _expId = getSelectedExperimentId();
+    const _runIds = getSelectedRunIds();
+    if (initialized) {
+      syncToUrl();
+    }
   });
 
   let experiments = $derived(getExperiments());
