@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import ExperimentList from "./lib/components/ExperimentList.svelte";
+  import FilterBar from "./lib/components/FilterBar.svelte";
   import RunTable from "./lib/components/RunTable.svelte";
   import MetricChart from "./lib/components/MetricChart.svelte";
   import ConfigComparison from "./lib/components/ConfigComparison.svelte";
@@ -12,6 +13,7 @@
     getExperiments,
     getSelectedExperimentId,
     getRuns,
+    getFilteredRuns,
     getSelectedRunIds,
     getPrimaryRunId,
     getMetricKeys,
@@ -19,12 +21,23 @@
     getColorOverrides,
     getLoading,
     getError,
+    getStatusFilter,
+    getTagFilters,
+    getSearchQuery,
     loadExperiments,
     selectExperiment,
     selectRun,
     toggleRunSelection,
     setRunColor,
     renameRun,
+    updateRunNotes,
+    deleteRun,
+    deleteExperiment,
+    setStatusFilter,
+    toggleTagFilter,
+    removeTagFilter,
+    setSearchQuery,
+    clearAllFilters,
     cleanup,
   } from "./lib/stores/experiments.svelte";
 
@@ -35,7 +48,8 @@
 
   let experiments = $derived(getExperiments());
   let selectedExperimentId = $derived(getSelectedExperimentId());
-  let runs = $derived(getRuns());
+  let allRuns = $derived(getRuns());
+  let filteredRuns = $derived(getFilteredRuns());
   let selectedRunIds = $derived(getSelectedRunIds());
   let primaryRunId = $derived(getPrimaryRunId());
   let metricKeys = $derived(getMetricKeys());
@@ -43,8 +57,11 @@
   let colorOverrides = $derived(getColorOverrides());
   let loading = $derived(getLoading());
   let error = $derived(getError());
+  let statusFilter = $derived(getStatusFilter());
+  let tagFilters = $derived(getTagFilters());
+  let searchQuery = $derived(getSearchQuery());
 
-  let selectedRuns = $derived(runs.filter((r) => selectedRunIds.has(r.id)));
+  let selectedRuns = $derived(filteredRuns.filter((r) => selectedRunIds.has(r.id)));
 
   /** Separate hardware (sys/) keys from training keys. */
   let trainingKeys = $derived(metricKeys.filter((k) => !k.startsWith("sys/")));
@@ -98,6 +115,10 @@
     }
     return `Comparing ${selectedRuns.length} runs`;
   });
+
+  function handleTagFilter(tag: string) {
+    toggleTagFilter(tag);
+  }
 </script>
 
 <div class="app">
@@ -105,6 +126,7 @@
     {experiments}
     selectedId={selectedExperimentId}
     onSelect={selectExperiment}
+    onDelete={deleteExperiment}
   />
 
   <main class="content">
@@ -125,8 +147,19 @@
       <div class="experiment-view">
         <section class="runs-section">
           <h2>Runs</h2>
+          <FilterBar
+            runs={allRuns}
+            {statusFilter}
+            {tagFilters}
+            {searchQuery}
+            onStatusChange={setStatusFilter}
+            onTagToggle={toggleTagFilter}
+            onTagRemove={removeTagFilter}
+            onSearchChange={setSearchQuery}
+            onClearAll={clearAllFilters}
+          />
           <RunTable
-            {runs}
+            runs={filteredRuns}
             selectedIds={selectedRunIds}
             primaryId={primaryRunId}
             {colorOverrides}
@@ -134,6 +167,9 @@
             onToggle={toggleRunSelection}
             onRename={renameRun}
             onColorChange={setRunColor}
+            onTagFilter={handleTagFilter}
+            onDeleteRun={deleteRun}
+            onUpdateNotes={updateRunNotes}
           />
         </section>
 

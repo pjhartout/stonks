@@ -54,3 +54,19 @@ export async function fetchMetrics(
   }
   return get<MetricSeries>(`/runs/${runId}/metrics`, params);
 }
+
+export async function deleteRun(runId: string): Promise<void> {
+  const resp = await fetch(`${BASE}/runs/${runId}`, { method: "DELETE" });
+  if (!resp.ok) {
+    throw new Error(`API error: ${resp.status} ${resp.statusText}`);
+  }
+}
+
+export async function deleteExperiment(experimentId: string): Promise<void> {
+  const resp = await fetch(`${BASE}/experiments/${experimentId}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) {
+    throw new Error(`API error: ${resp.status} ${resp.statusText}`);
+  }
+}

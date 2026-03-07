@@ -1,4 +1,4 @@
-import { fetchExperiments, fetchMetricKeys, fetchMetrics, fetchRuns, patchRun } from "../api/client";
+import { deleteExperiment as apiDeleteExperiment, deleteRun as apiDeleteRun, fetchExperiments, fetchMetricKeys, fetchMetrics, fetchRuns, patchRun } from "../api/client";
 import { connectSSE } from "../api/sse";
 import type { Experiment, MetricSeries, Run } from "../types";
 import { MAX_SELECTED_RUNS } from "../utils/colors";
@@ -17,6 +17,11 @@ let metricData = $state<Map<string, Map<string, MetricSeries>>>(new Map());
 let colorOverrides = $state<Map<string, string>>(loadColorOverrides());
 let loading = $state(false);
 let error = $state<string | null>(null);
+
+// Filter state
+let statusFilter = $state<string>("all");
+let tagFilters = $state<Set<string>>(new Set());
+let searchQuery = $state<string>("");
 
 let sseCleanup: (() => void) | null = null;
 
@@ -68,6 +73,76 @@ export function getError() {
   return error;
 }
 
+// Filter getters
+export function getStatusFilter() {
+  return statusFilter;
+}
+
+export function getTagFilters() {
+  return tagFilters;
+}
+
+export function getSearchQuery() {
+  return searchQuery;
+}
+
+// Filter setters
+export function setStatusFilter(status: string) {
+  statusFilter = status;
+}
+
+export function toggleTagFilter(tag: string) {
+  const next = new Set(tagFilters);
+  if (next.has(tag)) {
+    next.delete(tag);
+  } else {
+    next.add(tag);
+  }
+  tagFilters = next;
+}
+
+export function removeTagFilter(tag: string) {
+  const next = new Set(tagFilters);
+  next.delete(tag);
+  tagFilters = next;
+}
+
+export function setSearchQuery(query: string) {
+  searchQuery = query;
+}
+
+export function clearAllFilters() {
+  statusFilter = "all";
+  tagFilters = new Set();
+  searchQuery = "";
+}
+
+/** Apply filters to the runs array. */
+export function getFilteredRuns(): Run[] {
+  let filtered = runs;
+
+  if (statusFilter !== "all") {
+    filtered = filtered.filter((r) => r.status === statusFilter);
+  }
+
+  if (tagFilters.size > 0) {
+    filtered = filtered.filter((r) =>
+      r.tags && [...tagFilters].every((tag) => r.tags.includes(tag)),
+    );
+  }
+
+  if (searchQuery.length > 0) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(
+      (r) =>
+        (r.name && r.name.toLowerCase().includes(q)) ||
+        r.id.toLowerCase().includes(q),
+    );
+  }
+
+  return filtered;
+}
+
 export async function loadExperiments() {
   loading = true;
   error = null;
@@ -88,6 +163,9 @@ export async function selectExperiment(id: string) {
   metricData = new Map();
   loading = true;
   error = null;
+
+  // Reset filters when switching experiments
+  clearAllFilters();
 
   // Disconnect previous SSE
   if (sseCleanup) {
@@ -210,6 +288,56 @@ export async function renameRun(runId: string, name: string) {
     runs = runs.map((r) => (r.id === runId ? { ...r, name: updated.name } : r));
   } catch (e) {
     error = e instanceof Error ? e.message : "Failed to rename run";
+  }
+}
+
+export async function updateRunNotes(runId: string, notes: string) {
+  try {
+    const updated = await patchRun(runId, { notes: notes || null });
+    runs = runs.map((r) => (r.id === runId ? { ...r, notes: updated.notes } : r));
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Failed to update notes";
+  }
+}
+
+export async function deleteRun(runId: string) {
+  try {
+    await apiDeleteRun(runId);
+    runs = runs.filter((r) => r.id !== runId);
+    // Clean up selection
+    if (selectedRunIds.has(runId)) {
+      removeRunMetrics(runId);
+      const next = new Set(selectedRunIds);
+      next.delete(runId);
+      selectedRunIds = next;
+      if (primaryRunId === runId) {
+        const remaining = [...selectedRunIds];
+        primaryRunId = remaining.length > 0 ? remaining[0] : null;
+      }
+    }
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Failed to delete run";
+  }
+}
+
+export async function deleteExperiment(experimentId: string) {
+  try {
+    await apiDeleteExperiment(experimentId);
+    experiments = experiments.filter((e) => e.id !== experimentId);
+    if (selectedExperimentId === experimentId) {
+      selectedExperimentId = null;
+      runs = [];
+      selectedRunIds = new Set();
+      primaryRunId = null;
+      metricKeys = [];
+      metricData = new Map();
+      if (sseCleanup) {
+        sseCleanup();
+        sseCleanup = null;
+      }
+    }
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Failed to delete experiment";
   }
 }
 
