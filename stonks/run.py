@@ -10,6 +10,7 @@ from typing import Literal
 from loguru import logger
 
 from stonks.buffer import MetricBuffer
+from stonks.distributed import get_rank, get_world_size
 from stonks.exceptions import StonksError
 from stonks.hardware import HardwareMonitor
 from stonks.models import RunInfo
@@ -202,6 +203,18 @@ class Run:
             self._hw_monitor.start()
 
         assert self._run_info is not None
+
+        # Warn if running on a non-zero rank in a distributed environment.
+        world_size = get_world_size()
+        if world_size > 1:
+            rank = get_rank()
+            if rank != 0:
+                logger.warning(
+                    f"stonks.Run started on rank {rank} (world_size={world_size}). "
+                    "Only rank 0 should write to avoid SQLite conflicts. "
+                    "Consider using StonksLogger with StonksDistributedCallback."
+                )
+
         action = "Resumed" if resumed else "Started"
         logger.info(f"{action} run {self._run_info.id} in experiment '{self._experiment_name}'")
         return self
