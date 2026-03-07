@@ -44,6 +44,18 @@ jobs:
           echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build frontend
+        run: cd ui && bun install && bun run build
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build wheel and sdist
+        run: uv build
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -52,3 +64,4 @@ jobs:
           body: ${{ steps.release_notes.outputs.notes }}
           draft: false
           prerelease: false
+          files: dist/*
