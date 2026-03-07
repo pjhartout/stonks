@@ -6,12 +6,48 @@ Born out of frustration with the extortionate pricing of overleveraged ML experi
 
 ## Install
 
+### Development (recommended)
+
+Clone the repo and install with [uv](https://docs.astral.sh/uv/):
+
 ```bash
-git clone https://github.com/pjhartout/stonks.git && cd stonks
+git clone https://github.com/pjhartout/stonks.git
+cd stonks
 uv sync --all-extras
+
+# Build the dashboard frontend
+cd ui && bun install && bun run build && cd ..
+
+# Start the dashboard
+stonks serve
 ```
 
-Or pick what you need:
+### From a release (easiest for non-developers)
+
+Download a pre-built wheel from [GitHub Releases](https://github.com/pjhartout/stonks/releases)
+(the wheel includes the pre-built dashboard frontend):
+
+```bash
+pip install https://github.com/pjhartout/stonks/releases/download/vX.Y.Z/stonks-X.Y.Z-py3-none-any.whl
+```
+
+### From Git (SDK only, no dashboard)
+
+Install the latest `main` directly from Git:
+
+```bash
+pip install "stonks @ git+https://github.com/pjhartout/stonks.git"
+
+# With the dashboard server:
+pip install "stonks[server] @ git+https://github.com/pjhartout/stonks.git"
+```
+
+Note: Git installs do not include the pre-built dashboard frontend. To get the
+dashboard, either use a release wheel or build the frontend yourself (see Development above).
+
+### Optional extras
+
+Pick what you need:
 
 ```bash
 uv sync                       # core SDK only
@@ -20,6 +56,8 @@ uv sync --extra server        # + dashboard server
 uv sync --extra gpu           # + NVIDIA GPU monitoring
 uv sync --all-extras          # everything
 ```
+
+The same extras work with pip: `pip install "stonks[server,lightning]"`.
 
 ## Log metrics
 
