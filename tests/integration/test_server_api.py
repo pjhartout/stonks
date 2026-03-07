@@ -178,6 +178,70 @@ class TestRunEndpoints:
         resp = await client.patch("/api/runs/nonexistent-id", json={"name": "x"})
         assert resp.status_code == 404
 
+    async def test_patch_run_tags(self, client):
+        """PATCH /api/runs/{id} with tags updates tags."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.patch(f"/api/runs/{run_id}", json={"tags": ["sweep", "lr-0.01"]})
+        assert resp.status_code == 200
+        assert resp.json()["tags"] == ["sweep", "lr-0.01"]
+
+        # Verify persistence
+        resp = await client.get(f"/api/runs/{run_id}")
+        assert resp.json()["tags"] == ["sweep", "lr-0.01"]
+
+    async def test_patch_run_notes(self, client):
+        """PATCH /api/runs/{id} with notes updates notes."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.patch(f"/api/runs/{run_id}", json={"notes": "Best run so far"})
+        assert resp.status_code == 200
+        assert resp.json()["notes"] == "Best run so far"
+
+        # Verify persistence
+        resp = await client.get(f"/api/runs/{run_id}")
+        assert resp.json()["notes"] == "Best run so far"
+
+    async def test_patch_run_tags_and_notes_together(self, client):
+        """PATCH /api/runs/{id} can update tags and notes in one request."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.patch(
+            f"/api/runs/{run_id}",
+            json={"tags": ["final"], "notes": "Production candidate"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tags"] == ["final"]
+        assert body["notes"] == "Production candidate"
+
+    async def test_patch_run_empty_body_preserves_tags_notes(self, client):
+        """PATCH with empty body does not clear tags or notes."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        # Set tags and notes
+        await client.patch(
+            f"/api/runs/{run_id}",
+            json={"tags": ["keep"], "notes": "Keep this"},
+        )
+        # Empty body should preserve them
+        resp = await client.patch(f"/api/runs/{run_id}", json={})
+        assert resp.status_code == 200
+        assert resp.json()["tags"] == ["keep"]
+        assert resp.json()["notes"] == "Keep this"
+
 
 class TestMetricEndpoints:
     async def test_get_metric_keys(self, client):

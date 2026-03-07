@@ -30,7 +30,7 @@ export async function fetchMetricKeys(runId: string): Promise<string[]> {
 
 export async function patchRun(
   runId: string,
-  fields: { name?: string | null },
+  fields: { name?: string | null; tags?: string[]; notes?: string | null },
 ): Promise<Run> {
   const resp = await fetch(`${BASE}/runs/${runId}`, {
     method: "PATCH",
