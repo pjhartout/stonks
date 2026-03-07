@@ -1,5 +1,7 @@
 """Tests for stonks Run context manager."""
 
+from unittest.mock import patch
+
 import pytest
 
 import stonks
@@ -105,3 +107,59 @@ class TestRunLifecycle:
         with stonks.start_run("test-exp", save_dir=str(db_path), strict=False) as run:
             run.log({"loss": float("inf")}, step=0)
             # Should not raise
+
+
+class TestManualStart:
+    def test_start_without_context_manager(self, db_path):
+        """Run.start() works without context manager, must call finish() manually."""
+        run = stonks.start_run("test-exp", save_dir=str(db_path))
+        run.start()
+        run.log({"loss": 1.0}, step=0)
+        run_id = run.id
+        run.finish()
+
+        conn = create_connection(str(db_path))
+        runs = list_runs(conn)
+        assert len(runs) == 1
+        assert runs[0].id == run_id
+        assert runs[0].status == "completed"
+        series = get_metrics(conn, run_id, "loss")
+        assert series.values == [1.0]
+        conn.close()
+
+    def test_start_returns_self(self, db_path):
+        """Run.start() returns self for chaining."""
+        run = stonks.start_run("test-exp", save_dir=str(db_path))
+        result = run.start()
+        assert result is run
+        run.finish()
+
+    def test_finish_with_failed_status(self, db_path):
+        """Run.finish('failed') marks the run as failed."""
+        run = stonks.start_run("test-exp", save_dir=str(db_path))
+        run.start()
+        run.finish("failed")
+
+        conn = create_connection(str(db_path))
+        runs = list_runs(conn)
+        assert runs[0].status == "failed"
+        conn.close()
+
+
+class TestStrictMode:
+    def test_strict_raises_on_db_failure(self, db_path):
+        """strict=True propagates database errors during metric flush."""
+        with stonks.start_run("test-exp", save_dir=str(db_path), strict=True) as run:
+            # Simulate a DB failure by patching insert_metrics
+            with patch("stonks.run.insert_metrics", side_effect=Exception("DB write failed")):
+                run.log({"loss": 1.0}, step=0)
+                with pytest.raises(Exception, match="DB write failed"):
+                    run.flush()
+
+    def test_lenient_mode_does_not_raise_on_db_failure(self, db_path):
+        """strict=False swallows database errors during metric flush."""
+        with stonks.start_run("test-exp", save_dir=str(db_path), strict=False) as run:
+            with patch("stonks.run.insert_metrics", side_effect=Exception("DB write failed")):
+                # Should not raise even though DB write fails
+                run.log({"loss": 1.0}, step=0)
+                run.flush()
