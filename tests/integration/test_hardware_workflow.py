@@ -15,12 +15,12 @@ class TestHardwareWorkflow:
             "hw-test",
             save_dir=db,
             hardware=True,
-            hardware_interval=1.0,
+            hardware_interval=0.05,
             hardware_gpu=False,
         ) as run:
             run.log({"train/loss": 0.5}, step=0)
             # Give the hardware monitor time for at least one poll + buffer flush
-            time.sleep(1.5)
+            time.sleep(0.15)
             run.flush()
 
         conn = create_connection(db)
