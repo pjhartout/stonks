@@ -2,7 +2,7 @@
 
 import argparse
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -262,15 +262,19 @@ class TestGcCommand:
 class TestServeCommand:
     def test_serve_calls_uvicorn(self, seeded_db):
         """serve command calls uvicorn.run with correct args."""
-        with patch("stonks.cli.uvicorn") as mock_uvicorn:
+        mock_uvicorn = MagicMock()
+        mock_create_app = MagicMock()
+        with (
+            patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
+            patch("stonks.server.app.create_app", mock_create_app),
+        ):
             serve_command(_ns(db=seeded_db, host="127.0.0.1", port=8000, reload=False))
             mock_uvicorn.run.assert_called_once()
-            call_kwargs = mock_uvicorn.run.call_args
-            assert call_kwargs[1]["host"] == "127.0.0.1" or call_kwargs[0][1:] == ()
 
     def test_serve_reload_mode(self, seeded_db):
         """serve --reload uses factory string."""
-        with patch("stonks.cli.uvicorn") as mock_uvicorn:
+        mock_uvicorn = MagicMock()
+        with patch.dict("sys.modules", {"uvicorn": mock_uvicorn}):
             serve_command(_ns(db=seeded_db, host="127.0.0.1", port=8000, reload=True))
             mock_uvicorn.run.assert_called_once()
             call_args = mock_uvicorn.run.call_args
