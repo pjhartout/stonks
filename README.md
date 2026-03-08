@@ -112,6 +112,10 @@ Options:
 - `hardware_interval` — seconds between polls (default 5.0, minimum 1.0)
 - `hardware_gpu` — set to `False` to disable GPU monitoring even when pynvml is installed
 
+## Agent-developed
+
+This library is primarily developed with AI coding agents. I built stonks for my own ML workflow and use agents to move fast on features, tests, and maintenance. The codebase is structured to be agent-friendly (clear conventions, comprehensive tests, strict linting) but the design decisions and direction are mine.
+
 ## View the dashboard
 
 ```bash
