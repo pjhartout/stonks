@@ -14,9 +14,9 @@ class TestHardwareMonitor:
         def log_fn(metrics, step):
             collected.append((dict(metrics), step))
 
-        mon = HardwareMonitor(log_fn=log_fn, interval=0.1, enable_gpu=False)
+        mon = HardwareMonitor(log_fn=log_fn, interval=0.05, enable_gpu=False)
         mon.start()
-        time.sleep(0.4)
+        time.sleep(0.15)
         mon.stop()
 
         assert len(collected) >= 1
@@ -33,9 +33,9 @@ class TestHardwareMonitor:
         def log_fn(metrics, step):
             collected.append(dict(metrics))
 
-        mon = HardwareMonitor(log_fn=log_fn, interval=0.1, enable_gpu=False)
+        mon = HardwareMonitor(log_fn=log_fn, interval=0.05, enable_gpu=False)
         mon.start()
-        time.sleep(0.3)
+        time.sleep(0.15)
         mon.stop()
 
         assert len(collected) >= 1
@@ -53,9 +53,9 @@ class TestHardwareMonitor:
         def log_fn(metrics, step):
             collected.append(dict(metrics))
 
-        mon = HardwareMonitor(log_fn=log_fn, interval=0.1, enable_gpu=False)
+        mon = HardwareMonitor(log_fn=log_fn, interval=0.05, enable_gpu=False)
         mon.start()
-        time.sleep(0.3)
+        time.sleep(0.15)
         mon.stop()
 
         assert len(collected) >= 1
@@ -71,10 +71,9 @@ class TestHardwareMonitor:
         def log_fn(metrics, step):
             steps.append(step)
 
-        mon = HardwareMonitor(log_fn=log_fn, interval=1.0, enable_gpu=False)
+        mon = HardwareMonitor(log_fn=log_fn, interval=0.05, enable_gpu=False)
         mon.start()
-        # Need >1s to get at least 2 polls (immediate + 1 interval)
-        time.sleep(1.5)
+        time.sleep(0.15)
         mon.stop()
 
         assert len(steps) >= 2
@@ -88,12 +87,12 @@ class TestHardwareMonitor:
         def log_fn(metrics, step):
             collected.append(step)
 
-        mon = HardwareMonitor(log_fn=log_fn, interval=0.1, enable_gpu=False)
+        mon = HardwareMonitor(log_fn=log_fn, interval=0.05, enable_gpu=False)
 
         # Double start
         mon.start()
         mon.start()
-        time.sleep(0.2)
+        time.sleep(0.1)
 
         # Double stop
         mon.stop()
@@ -108,9 +107,9 @@ class TestHardwareMonitor:
         def log_fn(metrics, step):
             collected.append(dict(metrics))
 
-        mon = HardwareMonitor(log_fn=log_fn, interval=0.1, enable_gpu=False)
+        mon = HardwareMonitor(log_fn=log_fn, interval=0.05, enable_gpu=False)
         mon.start()
-        time.sleep(0.2)
+        time.sleep(0.1)
         mon.stop()
 
         assert len(collected) >= 1
@@ -126,9 +125,9 @@ class TestHardwareMonitor:
             collected.append(dict(metrics))
 
         with patch("stonks.hardware._HAS_PYNVML", False):
-            mon = HardwareMonitor(log_fn=log_fn, interval=0.1, enable_gpu=True)
+            mon = HardwareMonitor(log_fn=log_fn, interval=0.05, enable_gpu=True)
             mon.start()
-            time.sleep(0.2)
+            time.sleep(0.1)
             mon.stop()
 
         assert len(collected) >= 1
@@ -138,16 +137,16 @@ class TestHardwareMonitor:
 
     def test_thread_is_daemon(self):
         """The polling thread should be a daemon thread."""
-        mon = HardwareMonitor(log_fn=lambda m, s: None, interval=0.1, enable_gpu=False)
+        mon = HardwareMonitor(log_fn=lambda m, s: None, interval=0.05, enable_gpu=False)
         mon.start()
         assert mon._thread is not None
         assert mon._thread.daemon is True
         mon.stop()
 
     def test_interval_minimum_enforced(self):
-        """Interval below 1.0 should be clamped to 1.0."""
-        mon = HardwareMonitor(log_fn=lambda m, s: None, interval=0.5, enable_gpu=False)
-        assert mon._interval == 1.0
+        """Interval below 0.05 should be clamped to 0.05."""
+        mon = HardwareMonitor(log_fn=lambda m, s: None, interval=0.01, enable_gpu=False)
+        assert mon._interval == 0.05
 
     def test_immediate_first_poll(self):
         """The first poll should happen immediately, before waiting for interval."""
@@ -158,7 +157,7 @@ class TestHardwareMonitor:
 
         mon = HardwareMonitor(log_fn=log_fn, interval=10.0, enable_gpu=False)
         mon.start()
-        time.sleep(0.3)
+        time.sleep(0.1)
         mon.stop()
 
         # Should have at least one data point despite 10s interval

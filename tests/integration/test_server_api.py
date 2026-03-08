@@ -12,14 +12,14 @@ def app(db_path):
     """Create a FastAPI app with a test database."""
     db = str(db_path)
     # Seed some data
-    with stonks.start_run("exp-alpha", db=db, config={"lr": 0.001}) as run:
+    with stonks.start_run("exp-alpha", save_dir=db, config={"lr": 0.001}) as run:
         run.log({"train/loss": 1.0, "train/acc": 0.5}, step=0)
         run.log({"train/loss": 0.5, "train/acc": 0.8}, step=1)
 
-    with stonks.start_run("exp-alpha", db=db, config={"lr": 0.01}) as run:
+    with stonks.start_run("exp-alpha", save_dir=db, config={"lr": 0.01}) as run:
         run.log({"train/loss": 0.8}, step=0)
 
-    with stonks.start_run("exp-beta", db=db, config={"epochs": 10}) as run:
+    with stonks.start_run("exp-beta", save_dir=db, config={"epochs": 10}) as run:
         run.log({"val/loss": 0.3}, step=0)
 
     return create_app(db)
@@ -217,7 +217,7 @@ class TestMetricEndpoints:
         """Downsampling reduces the number of points."""
         # Create a run with many data points
         db = str(db_path)
-        with stonks.start_run("big-exp", db=db) as run:
+        with stonks.start_run("big-exp", save_dir=db) as run:
             for step in range(100):
                 run.log({"loss": 1.0 / (step + 1)}, step=step)
 
