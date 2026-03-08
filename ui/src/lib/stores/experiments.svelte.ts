@@ -341,6 +341,44 @@ export async function deleteExperiment(experimentId: string) {
   }
 }
 
+/** Sync current selection state to URL query params using replaceState. */
+export function syncToUrl() {
+  const params = new URLSearchParams();
+  if (selectedExperimentId) {
+    params.set("exp", selectedExperimentId);
+  }
+  if (selectedRunIds.size > 0) {
+    params.set("run", [...selectedRunIds].join(","));
+  }
+  const query = params.toString();
+  const url = query ? `?${query}` : window.location.pathname;
+  history.replaceState(null, "", url);
+}
+
+/** Restore selection state from URL query params on page load. */
+export async function restoreFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const expId = params.get("exp");
+  const runParam = params.get("run");
+
+  if (!expId) return;
+
+  // Validate that the experiment exists
+  const match = experiments.find((e) => e.id === expId);
+  if (!match) return;
+
+  await selectExperiment(expId);
+
+  if (runParam) {
+    const runIds = runParam.split(",").filter((id) => id.length > 0);
+    // Validate that runs exist in the loaded runs
+    const validRunIds = runIds.filter((id) => runs.some((r) => r.id === id));
+    for (const rid of validRunIds) {
+      await selectRun(rid);
+    }
+  }
+}
+
 export function cleanup() {
   if (sseCleanup) {
     sseCleanup();

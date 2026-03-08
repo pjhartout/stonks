@@ -77,7 +77,7 @@
     background: var(--bg-surface, #1e1e2e);
     border: 1px solid var(--border, #45475a);
     border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 16px var(--shadow-tooltip, rgba(0, 0, 0, 0.3));
     width: 172px;
     user-select: none;
   }
@@ -96,10 +96,10 @@
     padding: 0;
   }
   .cp-swatch:hover {
-    border-color: rgba(255, 255, 255, 0.4);
+    border-color: var(--swatch-border-hover, rgba(255, 255, 255, 0.4));
   }
   .cp-swatch.active {
-    border-color: white;
+    border-color: var(--text);
   }
   .cp-hex {
     display: flex;
@@ -110,7 +110,7 @@
     width: 20px;
     height: 20px;
     border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid var(--swatch-border, rgba(255, 255, 255, 0.15));
     flex-shrink: 0;
   }
   .cp-input {

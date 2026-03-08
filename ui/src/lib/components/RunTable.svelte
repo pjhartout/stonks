@@ -580,12 +580,12 @@
     width: 14px;
     height: 14px;
     border-radius: 3px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid var(--swatch-border, rgba(255, 255, 255, 0.15));
     cursor: pointer;
     padding: 0;
   }
   .color-swatch:hover {
-    border-color: rgba(255, 255, 255, 0.4);
+    border-color: var(--swatch-border-hover, rgba(255, 255, 255, 0.4));
   }
   tr {
     cursor: pointer;

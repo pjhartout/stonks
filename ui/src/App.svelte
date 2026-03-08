@@ -38,12 +38,57 @@
     removeTagFilter,
     setSearchQuery,
     clearAllFilters,
+    syncToUrl,
+    restoreFromUrl,
     cleanup,
   } from "./lib/stores/experiments.svelte";
 
+  const THEME_KEY = "stonks:theme";
+
+  function getInitialTheme(): "dark" | "light" {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: light)").matches) {
+      return "light";
+    }
+    return "dark";
+  }
+
+  let theme = $state<"dark" | "light">(getInitialTheme());
+
+  function toggleTheme() {
+    theme = theme === "dark" ? "light" : "dark";
+    localStorage.setItem(THEME_KEY, theme);
+  }
+
+  // Apply theme class to document root
+  $effect(() => {
+    if (theme === "light") {
+      document.documentElement.classList.add("light");
+    } else {
+      document.documentElement.classList.remove("light");
+    }
+  });
+
+  let isDark = $derived(theme === "dark");
+
+  let initialized = $state(false);
+
   onMount(() => {
-    loadExperiments();
+    loadExperiments().then(() => restoreFromUrl()).then(() => { initialized = true; });
     return cleanup;
+  });
+
+  // Sync selection state to URL whenever it changes (after initial load).
+  // selectedExperimentId and selectedRunIds are read here so Svelte tracks
+  // them as dependencies of this effect; removing these reads will break the
+  // URL sync.
+  $effect(() => {
+    if (!initialized) return;
+    const expId = selectedExperimentId;
+    const runIds = [...selectedRunIds];
+    void `${expId}|${runIds.join(",")}`;
+    syncToUrl();
   });
 
   let experiments = $derived(getExperiments());
@@ -127,6 +172,8 @@
     selectedId={selectedExperimentId}
     onSelect={selectExperiment}
     onDelete={deleteExperiment}
+    {isDark}
+    onToggleTheme={toggleTheme}
   />
 
   <main class="content">
