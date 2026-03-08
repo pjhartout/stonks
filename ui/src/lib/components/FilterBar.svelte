@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Run } from "../types";
+  import type { Run, StatusFilter } from "../types";
 
   let {
     runs,
@@ -13,10 +13,10 @@
     onClearAll,
   }: {
     runs: Run[];
-    statusFilter: string;
+    statusFilter: StatusFilter;
     tagFilters: Set<string>;
     searchQuery: string;
-    onStatusChange: (status: string) => void;
+    onStatusChange: (status: StatusFilter) => void;
     onTagToggle: (tag: string) => void;
     onTagRemove: (tag: string) => void;
     onSearchChange: (query: string) => void;
@@ -66,7 +66,7 @@
     <select
       class="status-select"
       value={statusFilter}
-      onchange={(e) => onStatusChange((e.target as HTMLSelectElement).value)}
+      onchange={(e) => onStatusChange((e.target as HTMLSelectElement).value as StatusFilter)}
     >
       <option value="all">All statuses</option>
       <option value="running">Running</option>

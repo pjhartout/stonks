@@ -300,7 +300,7 @@ def update_run_config(conn: sqlite3.Connection, run_id: str, config: dict) -> No
 
 
 def delete_run(conn: sqlite3.Connection, run_id: str) -> bool:
-    """Delete a run and its metrics.
+    """Delete a run and its metrics atomically.
 
     Args:
         conn: Active database connection.
@@ -312,8 +312,13 @@ def delete_run(conn: sqlite3.Connection, run_id: str) -> bool:
     row = conn.execute("SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone()
     if row is None:
         return False
-    conn.execute("DELETE FROM metrics WHERE run_id = ?", (run_id,))
-    conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
-    conn.commit()
+    try:
+        conn.execute("BEGIN")
+        conn.execute("DELETE FROM metrics WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     logger.debug(f"Deleted run {run_id}")
     return True

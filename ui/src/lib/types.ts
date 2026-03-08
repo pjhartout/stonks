@@ -21,6 +21,8 @@ export interface Run {
   notes: string | null;
 }
 
+export type StatusFilter = "all" | Run["status"];
+
 export interface MetricSeries {
   key: string;
   steps: number[];

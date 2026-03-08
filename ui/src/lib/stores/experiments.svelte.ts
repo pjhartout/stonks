@@ -1,6 +1,6 @@
 import { deleteExperiment as apiDeleteExperiment, deleteRun as apiDeleteRun, fetchExperiments, fetchMetricKeys, fetchMetrics, fetchRuns, patchRun } from "../api/client";
 import { connectSSE } from "../api/sse";
-import type { Experiment, MetricSeries, Run } from "../types";
+import type { Experiment, MetricSeries, Run, StatusFilter } from "../types";
 import { MAX_SELECTED_RUNS } from "../utils/colors";
 
 const COLOR_STORAGE_KEY = "stonks:run-colors";
@@ -19,7 +19,7 @@ let loading = $state(false);
 let error = $state<string | null>(null);
 
 // Filter state
-let statusFilter = $state<string>("all");
+let statusFilter = $state<StatusFilter>("all");
 let tagFilters = $state<Set<string>>(new Set());
 let searchQuery = $state<string>("");
 
@@ -74,7 +74,7 @@ export function getError() {
 }
 
 // Filter getters
-export function getStatusFilter() {
+export function getStatusFilter(): StatusFilter {
   return statusFilter;
 }
 
@@ -87,7 +87,7 @@ export function getSearchQuery() {
 }
 
 // Filter setters
-export function setStatusFilter(status: string) {
+export function setStatusFilter(status: StatusFilter) {
   statusFilter = status;
 }
 

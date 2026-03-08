@@ -54,41 +54,35 @@
   {:else}
     <ul class="list">
       {#each experiments as exp (exp.id)}
-        <li>
-          <div
+        <li class="item-wrapper" class:active={selectedId === exp.id}>
+          <button
             class="item"
-            class:active={selectedId === exp.id}
-            role="button"
-            tabindex="0"
             onclick={() => onSelect(exp.id)}
-            onkeydown={(e) => { if (e.key === "Enter") onSelect(exp.id); }}
           >
-            <div class="item-header">
-              <span class="name">{exp.name}</span>
-              {#if confirmDeleteId === exp.id}
-                <span class="confirm-delete">
-                  <button class="btn-confirm-yes" onclick={(e) => confirmDelete(e)} title="Delete experiment and all runs">Yes</button>
-                  <button class="btn-confirm-no" onclick={(e) => cancelDelete(e)} title="Cancel">No</button>
-                </span>
-              {:else if onDelete}
-                <button
-                  class="btn-delete-exp"
-                  onclick={(e) => handleDeleteClick(e, exp.id)}
-                  title="Delete experiment"
-                >
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z" />
-                    <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4L4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z" />
-                  </svg>
-                </button>
-              {/if}
-            </div>
+            <span class="name">{exp.name}</span>
             <span class="meta">
               {exp.run_count} run{exp.run_count !== 1 ? "s" : ""}
               &middot;
               {formatDate(exp.created_at)}
             </span>
-          </div>
+          </button>
+          {#if confirmDeleteId === exp.id}
+            <span class="confirm-delete">
+              <button class="btn-confirm-yes" onclick={(e) => confirmDelete(e)} title="Delete experiment and all runs">Yes</button>
+              <button class="btn-confirm-no" onclick={(e) => cancelDelete(e)} title="Cancel">No</button>
+            </span>
+          {:else if onDelete}
+            <button
+              class="btn-delete-exp"
+              onclick={(e) => handleDeleteClick(e, exp.id)}
+              title="Delete experiment"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z" />
+                <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4L4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z" />
+              </svg>
+            </button>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -122,31 +116,35 @@
     flex: 1;
     padding: 0.5rem;
   }
+  .item-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0 0.75rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .item-wrapper:hover {
+    background: var(--bg-hover);
+  }
+  .item-wrapper.active {
+    background: var(--bg-active);
+    border-left: 2px solid var(--accent);
+  }
   .item {
     display: flex;
     flex-direction: column;
-    width: 100%;
-    padding: 0.6rem 0.75rem;
+    flex: 1;
+    min-width: 0;
+    padding: 0.6rem 0;
+    border: none;
     background: none;
     color: var(--text);
     text-align: left;
     cursor: pointer;
-    border-radius: var(--radius);
     gap: 0.15rem;
-    outline: none;
-  }
-  .item:hover {
-    background: var(--bg-hover);
-  }
-  .item.active {
-    background: var(--bg-active);
-    border-left: 2px solid var(--accent);
-  }
-  .item-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+    font-family: inherit;
+    font-size: inherit;
   }
   .name {
     font-weight: 500;
@@ -172,7 +170,7 @@
     transition: opacity 0.1s;
     flex-shrink: 0;
   }
-  .item:hover .btn-delete-exp {
+  .item-wrapper:hover .btn-delete-exp {
     opacity: 1;
   }
   .btn-delete-exp:hover {

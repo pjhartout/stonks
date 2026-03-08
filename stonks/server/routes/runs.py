@@ -89,8 +89,13 @@ def patch_run(run_id: str, body: RunPatch, conn: sqlite3.Connection = Depends(ge
         raise HTTPException(status_code=404, detail="Run not found")
     if "name" in body.model_fields_set:
         update_run_name(conn, run_id, body.name)
-    if "tags" in body.model_fields_set and body.tags is not None:
-        update_run_tags(conn, run_id, body.tags)
+    if "tags" in body.model_fields_set:
+        if body.tags is not None:
+            if any(tag == "" for tag in body.tags):
+                raise HTTPException(status_code=422, detail="Tags must not contain empty strings")
+            update_run_tags(conn, run_id, body.tags)
+        else:
+            update_run_tags(conn, run_id, [])
     if "notes" in body.model_fields_set:
         update_run_notes(conn, run_id, body.notes or "")
     run = get_run_by_id(conn, run_id)
