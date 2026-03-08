@@ -10,12 +10,10 @@ import sys
 import time
 from datetime import UTC, datetime
 
-import uvicorn
 from loguru import logger
 
 from stonks.config import resolve_db_path
 from stonks.logging_config import setup_logging
-from stonks.server.app import create_app
 from stonks.store import (
     count_metrics,
     create_connection,
@@ -52,6 +50,14 @@ def serve_command(args: argparse.Namespace) -> None:
     Args:
         args: Parsed CLI arguments with db, host, port.
     """
+    try:
+        import uvicorn
+
+        from stonks.server.app import create_app
+    except ImportError:
+        print("Server dependencies not installed. Install with: pip install 'stonks[server]'")
+        sys.exit(1)
+
     db_path = str(resolve_db_path(args.db))
     logger.info(f"Starting stonks server on {args.host}:{args.port}")
 

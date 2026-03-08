@@ -188,6 +188,37 @@ def create_tag(version: str) -> None:
     print(f"Created tag {tag_name}")
 
 
+def get_current_branch() -> str:
+    """Get the current git branch name.
+
+    Returns:
+        The current branch name.
+    """
+    result = subprocess.check_output(
+        ["git", "branch", "--show-current"],
+        text=True,
+        cwd=PROJECT_ROOT,
+    )
+    return result.strip()
+
+
+def check_branch_safety(allow_branch: str | None = None) -> None:
+    """Check that we are on the main branch before releasing.
+
+    Args:
+        allow_branch: If set, allow releasing from this branch instead of main.
+    """
+    current = get_current_branch()
+    allowed = allow_branch or "main"
+    if current != allowed:
+        print(
+            f"Error: releases must be made from '{allowed}', "
+            f"but you are on '{current}'.\n"
+            f"Switch to '{allowed}' or use --allow-branch {current} to override."
+        )
+        sys.exit(1)
+
+
 def determine_new_version(version_arg: str, current_version: str) -> str:
     """Determine the new version based on user input.
 
@@ -255,7 +286,8 @@ def perform_release(current_version: str, new_version: str) -> None:
     create_tag(new_version)
 
     print("\nPushing to origin...")
-    run_command(["git", "push", "origin", "main"])
+    branch = get_current_branch()
+    run_command(["git", "push", "origin", branch])
     run_command(["git", "push", "origin", f"v{new_version}"])
 
     print("\nCreating GitHub release...")
@@ -292,6 +324,18 @@ def main() -> None:
 
     version_arg = sys.argv[1].lower()
     skip_prompt = "--yes" in sys.argv or "-y" in sys.argv
+
+    # Parse --allow-branch flag.
+    allow_branch = None
+    if "--allow-branch" in sys.argv:
+        idx = sys.argv.index("--allow-branch")
+        if idx + 1 < len(sys.argv):
+            allow_branch = sys.argv[idx + 1]
+        else:
+            print("Error: --allow-branch requires a branch name argument.")
+            sys.exit(1)
+
+    check_branch_safety(allow_branch)
 
     current_version = get_current_version()
     new_version = determine_new_version(version_arg, current_version)
