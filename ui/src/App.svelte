@@ -79,13 +79,16 @@
     return cleanup;
   });
 
-  // Sync selection state to URL whenever it changes (after initial load)
+  // Sync selection state to URL whenever it changes (after initial load).
+  // selectedExperimentId and selectedRunIds are read here so Svelte tracks
+  // them as dependencies of this effect; removing these reads will break the
+  // URL sync.
   $effect(() => {
-    const _expId = getSelectedExperimentId();
-    const _runIds = getSelectedRunIds();
-    if (initialized) {
-      syncToUrl();
-    }
+    if (!initialized) return;
+    const expId = selectedExperimentId;
+    const runIds = [...selectedRunIds];
+    void `${expId}|${runIds.join(",")}`;
+    syncToUrl();
   });
 
   let experiments = $derived(getExperiments());

@@ -54,8 +54,9 @@ def serve_command(args: argparse.Namespace) -> None:
         import uvicorn
 
         from stonks.server.app import create_app
-    except ImportError:
-        print("Server dependencies not installed. Install with: pip install 'stonks[server]'")
+    except ImportError as e:
+        print(f"Server dependencies not installed: {e}")
+        print("Install with: uv add uvicorn fastapi")
         sys.exit(1)
 
     db_path = str(resolve_db_path(args.db))
@@ -363,6 +364,15 @@ def demo_command(args: argparse.Namespace) -> None:
     if args.no_serve:
         print(f"Demo data written to: {db_path}")
         return
+
+    try:
+        import uvicorn
+
+        from stonks.server.app import create_app
+    except ImportError as e:
+        print(f"Server dependencies not installed: {e}")
+        print("Install with: uv add uvicorn fastapi")
+        sys.exit(1)
 
     url = f"http://{args.host}:{args.port}"
     print(f"\nDemo database: {db_path}")

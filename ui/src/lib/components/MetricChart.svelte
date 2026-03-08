@@ -187,9 +187,9 @@
       })),
     ];
 
-    const axisStroke = readCssVar("--chart-axis") || "#5c6078";
-    const gridStroke = readCssVar("--chart-grid") || "rgba(46, 51, 72, 0.27)";
-    const gridStrokeStrong = readCssVar("--chart-grid-strong") || "rgba(46, 51, 72, 0.53)";
+    const axisStroke = readCssVar("--chart-axis");
+    const gridStroke = readCssVar("--chart-grid");
+    const gridStrokeStrong = readCssVar("--chart-grid-strong");
     const axisFont = "11px Inter, sans-serif";
 
     const opts: uPlot.Options = {

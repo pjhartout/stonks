@@ -292,10 +292,11 @@ EXPERIMENTS: list[ExperimentConfig] = [
 ]
 
 
-def _generate_loss(step: int, curves: CurveParams) -> float:
+def _generate_loss(rng: random.Random, step: int, curves: CurveParams) -> float:
     """Generate a realistic loss value with exponential decay and noise.
 
     Args:
+        rng: Random number generator instance.
         step: Current training step.
         curves: Curve parameters.
 
@@ -303,14 +304,15 @@ def _generate_loss(step: int, curves: CurveParams) -> float:
         Simulated loss value.
     """
     base = curves.base_loss * math.exp(-curves.decay * step)
-    noise = random.gauss(0, curves.noise_std)
+    noise = rng.gauss(0, curves.noise_std)
     return max(0.001, base + noise)
 
 
-def _generate_accuracy(step: int, curves: CurveParams) -> float:
+def _generate_accuracy(rng: random.Random, step: int, curves: CurveParams) -> float:
     """Generate a realistic accuracy value with sigmoid curve and noise.
 
     Args:
+        rng: Random number generator instance.
         step: Current training step.
         curves: Curve parameters.
 
@@ -318,7 +320,7 @@ def _generate_accuracy(step: int, curves: CurveParams) -> float:
         Simulated accuracy value clamped to [0, 1].
     """
     sigmoid = curves.max_acc / (1 + math.exp(-curves.growth * (step - curves.midpoint)))
-    noise = random.gauss(0, curves.noise_std * 0.5)
+    noise = rng.gauss(0, curves.noise_std * 0.5)
     return max(0.0, min(1.0, sigmoid + noise))
 
 
@@ -334,7 +336,7 @@ def generate_demo_data(db_path: str) -> str:
     Returns:
         The database path used.
     """
-    random.seed(42)
+    rng = random.Random(42)
     logger.info(f"Generating demo data in {db_path}")
 
     for exp_config in EXPERIMENTS:
@@ -357,15 +359,15 @@ def generate_demo_data(db_path: str) -> str:
                 save_dir=db_path,
             ) as run:
                 for step in range(num_steps):
-                    loss = _generate_loss(step, run_config.curves)
-                    acc = _generate_accuracy(step, run_config.curves)
+                    loss = _generate_loss(rng, step, run_config.curves)
+                    acc = _generate_accuracy(rng, step, run_config.curves)
 
                     lr: float = run_config.config["learning_rate"]
                     metrics: dict[str, float] = {
                         "train/loss": loss,
                         "train/accuracy": acc,
-                        "val/loss": loss * (1.0 + random.gauss(0.1, 0.05)),
-                        "val/accuracy": acc * (1.0 - random.gauss(0.02, 0.01)),
+                        "val/loss": loss * (1.0 + rng.gauss(0.1, 0.05)),
+                        "val/accuracy": acc * (1.0 - rng.gauss(0.02, 0.01)),
                         "train/learning_rate": lr,
                     }
 
