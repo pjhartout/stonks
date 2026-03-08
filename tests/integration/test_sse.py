@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from unittest.mock import patch
 
 import pytest
@@ -17,6 +18,33 @@ from stonks.store import (
     initialize_db,
     update_heartbeat,
 )
+
+
+def _parse_sse_event(event):
+    """Parse an SSE event into a (event_type, data_dict) tuple.
+
+    Handles both dict events (yielded by the generator) and raw text/bytes
+    chunks (as formatted by sse_starlette). Returns None if the event cannot
+    be parsed, ensuring tests always validate structured data rather than
+    silently skipping assertions.
+
+    Args:
+        event: A dict, str, or bytes SSE event.
+
+    Returns:
+        A tuple of (event_type, data_dict) or None if unparseable.
+    """
+    if isinstance(event, dict) and "event" in event and "data" in event:
+        return (event["event"], json.loads(event["data"]))
+
+    if isinstance(event, (str, bytes)):
+        text = event if isinstance(event, str) else event.decode()
+        event_match = re.search(r"event:\s*(\S+)", text)
+        data_match = re.search(r"data:\s*(.+)", text)
+        if event_match and data_match:
+            return (event_match.group(1), json.loads(data_match.group(1)))
+
+    return None
 
 
 @pytest.fixture
@@ -67,34 +95,33 @@ class TestSSEEndpoint:
         response = await stream_events(experiment_id=exp_id)
 
         # The response wraps an async generator. Extract events from it.
-        events = []
+        parsed_events = []
         gen = response.body_iterator
 
         async def collect_events():
             async for event in gen:
-                if isinstance(event, dict) and event.get("event") == "run_update":
-                    events.append(event)
+                parsed = _parse_sse_event(event)
+                if parsed is not None and parsed[0] == "run_update":
+                    parsed_events.append(parsed)
                     return
-                # sse_starlette may also yield raw text chunks
-                if isinstance(event, (str, bytes)):
-                    text = event if isinstance(event, str) else event.decode()
-                    if "run_update" in text:
-                        events.append({"raw": text})
-                        return
 
+        timed_out = False
         try:
             async with asyncio.timeout(2.0):
                 await collect_events()
         except TimeoutError:
-            pass
+            timed_out = True
 
-        # After first poll, the existing running run should produce a run_update
-        assert len(events) >= 1
+        # Fail loudly if no run_update events were collected
+        assert len(parsed_events) >= 1, (
+            f"Expected at least 1 run_update event, got {len(parsed_events)}. "
+            f"Timed out: {timed_out}"
+        )
 
-        if "raw" not in events[0]:
-            data = json.loads(events[0]["data"])
-            assert data["run_id"] == run_id
-            assert data["status"] == "running"
+        event_type, data = parsed_events[0]
+        assert event_type == "run_update"
+        assert data["run_id"] == run_id, f"Expected run_id={run_id!r}, got {data.get('run_id')!r}"
+        assert data["status"] == "running", f"Expected status='running', got {data.get('status')!r}"
 
     @patch("stonks.server.routes.stream.POLL_INTERVAL", 0.05)
     async def test_metrics_update_event_on_heartbeat(self, db_path):
@@ -118,33 +145,48 @@ class TestSSEEndpoint:
         response = await stream_events(experiment_id=exp_id)
         gen = response.body_iterator
 
-        events = []
+        metrics_events = []
         saw_run_update = False
 
         async def collect_events():
             nonlocal saw_run_update
             async for event in gen:
-                if isinstance(event, dict):
-                    if event.get("event") == "run_update" and not saw_run_update:
-                        saw_run_update = True
-                        # Now update heartbeat so next poll picks it up
-                        hb_conn = create_connection(db)
-                        update_heartbeat(hb_conn, run_id)
-                        hb_conn.close()
-                    elif event.get("event") == "metrics_update":
-                        events.append(event)
-                        return
+                parsed = _parse_sse_event(event)
+                if parsed is None:
+                    continue
+                event_type, data = parsed
+                if event_type == "run_update" and not saw_run_update:
+                    saw_run_update = True
+                    # Now update heartbeat so next poll picks it up
+                    hb_conn = create_connection(db)
+                    update_heartbeat(hb_conn, run_id)
+                    hb_conn.close()
+                elif event_type == "metrics_update":
+                    metrics_events.append((event_type, data))
+                    return
 
+        timed_out = False
         try:
             async with asyncio.timeout(3.0):
                 await collect_events()
         except TimeoutError:
-            pass
+            timed_out = True
 
-        assert len(events) >= 1
-        data = json.loads(events[0]["data"])
-        assert data["run_id"] == run_id
-        assert "last_heartbeat" in data
+        assert saw_run_update, (
+            "Never received initial run_update event before waiting for metrics_update. "
+            f"Timed out: {timed_out}"
+        )
+        assert len(metrics_events) >= 1, (
+            f"Expected at least 1 metrics_update event, got {len(metrics_events)}. "
+            f"Timed out: {timed_out}"
+        )
+
+        event_type, data = metrics_events[0]
+        assert event_type == "metrics_update"
+        assert data["run_id"] == run_id, f"Expected run_id={run_id!r}, got {data.get('run_id')!r}"
+        assert "last_heartbeat" in data, (
+            f"Expected 'last_heartbeat' key in metrics_update data, got keys: {list(data.keys())}"
+        )
 
     @patch("stonks.server.routes.stream.POLL_INTERVAL", 0.05)
     async def test_run_status_change_emits_update(self, db_path):
@@ -174,8 +216,12 @@ class TestSSEEndpoint:
         async def collect_events():
             nonlocal first_seen
             async for event in gen:
-                if isinstance(event, dict) and event.get("event") == "run_update":
-                    run_updates.append(event)
+                parsed = _parse_sse_event(event)
+                if parsed is None:
+                    continue
+                event_type, data = parsed
+                if event_type == "run_update":
+                    run_updates.append((event_type, data))
                     if not first_seen:
                         first_seen = True
                         # Change the run status
@@ -185,14 +231,28 @@ class TestSSEEndpoint:
                     elif len(run_updates) >= 2:
                         return
 
+        timed_out = False
         try:
             async with asyncio.timeout(3.0):
                 await collect_events()
         except TimeoutError:
-            pass
+            timed_out = True
 
-        assert len(run_updates) >= 2
-        first_data = json.loads(run_updates[0]["data"])
-        second_data = json.loads(run_updates[1]["data"])
-        assert first_data["status"] == "running"
-        assert second_data["status"] == "completed"
+        assert len(run_updates) >= 2, (
+            f"Expected at least 2 run_update events, got {len(run_updates)}. Timed out: {timed_out}"
+        )
+
+        _, first_data = run_updates[0]
+        _, second_data = run_updates[1]
+        assert first_data["run_id"] == run_id, (
+            f"First run_update: expected run_id={run_id!r}, got {first_data.get('run_id')!r}"
+        )
+        assert first_data["status"] == "running", (
+            f"First run_update: expected status='running', got {first_data.get('status')!r}"
+        )
+        assert second_data["run_id"] == run_id, (
+            f"Second run_update: expected run_id={run_id!r}, got {second_data.get('run_id')!r}"
+        )
+        assert second_data["status"] == "completed", (
+            f"Second run_update: expected status='completed', got {second_data.get('status')!r}"
+        )
