@@ -14,6 +14,7 @@ services:
     volumes:
       - stonks-data:/data
       - ${SSH_KEY_PATH:-~/.ssh}:/root/.ssh:ro
+      - ${SSH_CONFIG:-~/.ssh/config}:/root/.ssh/config:ro
       - ${STONKS_CONFIG:-~/.stonks/remotes.toml}:/root/.stonks/remotes.toml:ro
     environment:
       - STONKS_DB=/data/stonks.db

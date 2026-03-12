@@ -28,6 +28,8 @@ export interface MetricSeries {
   steps: number[];
   values: (number | null)[];
   timestamps: number[];
+  values_min?: (number | null)[];
+  values_max?: (number | null)[];
 }
 
 export interface RunSeries {

@@ -119,8 +119,8 @@ def merge_remote_db(
         if "experiments" not in source_tables:
             logger.warning(f"Source DB for '{remote_name}' has no experiments table, skipping")
             target_conn.execute("ROLLBACK")
-            target_conn.execute("DETACH DATABASE source")
             return stats
+
         experiment_map = _merge_experiments(target_conn, project_map, stats)
 
         # Phase 3: Merge runs and metrics

@@ -95,7 +95,9 @@
   }
 
   function formatTime(ts: number): string {
-    return new Date(ts * 1000).toLocaleTimeString(undefined, {
+    return new Date(ts * 1000).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     });
