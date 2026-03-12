@@ -196,3 +196,66 @@ class HardwareMonitor:
             if metrics:
                 self._log_fn(metrics, self._step)
                 self._step += 1
+
+
+def collect_hardware_snapshot(enable_gpu: bool = True) -> dict[str, float]:
+    """Collect a point-in-time snapshot of hardware metrics.
+
+    Unlike HardwareMonitor which tracks cumulative counters over time,
+    this function returns instantaneous CPU, RAM, and GPU values suitable
+    for distributed gathering. Disk and network I/O counters are excluded
+    as they require baseline state.
+
+    Args:
+        enable_gpu: Whether to collect GPU metrics via pynvml.
+
+    Returns:
+        Dictionary of sys/-prefixed metric keys to float values.
+    """
+    metrics: dict[str, float] = {}
+
+    try:
+        metrics["sys/cpu_percent"] = psutil.cpu_percent()
+    except Exception:
+        pass
+
+    try:
+        mem = psutil.virtual_memory()
+        metrics["sys/ram_used_gb"] = mem.used * _BYTES_TO_GB
+        metrics["sys/ram_total_gb"] = mem.total * _BYTES_TO_GB
+        metrics["sys/ram_percent"] = mem.percent
+    except Exception:
+        pass
+
+    if enable_gpu and _HAS_PYNVML:
+        nvml_initialized = False
+        gpu_count = 0
+        try:
+            pynvml.nvmlInit()
+            nvml_initialized = True
+            gpu_count = pynvml.nvmlDeviceGetCount()
+        except Exception:
+            pass
+
+        for i in range(gpu_count):
+            try:
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+
+                util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                metrics[f"sys/gpu{i}_util"] = util.gpu
+
+                mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                metrics[f"sys/gpu{i}_mem_used_gb"] = mem_info.used * _BYTES_TO_GB
+                metrics[f"sys/gpu{i}_mem_total_gb"] = mem_info.total * _BYTES_TO_GB
+                if mem_info.total > 0:
+                    metrics[f"sys/gpu{i}_mem_percent"] = (mem_info.used / mem_info.total) * 100.0
+            except Exception:
+                pass
+
+        if nvml_initialized:
+            try:
+                pynvml.nvmlShutdown()
+            except Exception:
+                pass
+
+    return metrics

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -28,7 +29,8 @@ def get_run_metric_keys(run_id: str, conn: sqlite3.Connection = Depends(get_db))
     """
     if get_run_by_id(conn, run_id) is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return get_metric_keys(conn, run_id)
+    keys = get_metric_keys(conn, run_id)
+    return [k for k in keys if not re.match(r"rank_\d+/", k)]
 
 
 @router.get("/runs/{run_id}/metrics")

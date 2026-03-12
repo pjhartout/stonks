@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -66,8 +67,24 @@ class MetricSeries:
     timestamps: list[float] = field(default_factory=list)
 
 
+class _ConfigEncoder(json.JSONEncoder):
+    """JSON encoder that converts framework containers to plain Python types."""
+
+    def default(self, o: Any) -> Any:
+        # OmegaConf ListConfig/DictConfig
+        if type(o).__name__ == "ListConfig":
+            return list(o)
+        if type(o).__name__ == "DictConfig":
+            return dict(o)
+        # Fallback: stringify anything else
+        return str(o)
+
+
 def config_to_json(config: dict | None) -> str | None:
     """Serialize config dict to JSON string.
+
+    Handles OmegaConf ``ListConfig`` and ``DictConfig`` objects that
+    are not natively JSON-serializable.
 
     Args:
         config: Dictionary of configuration values.
@@ -77,7 +94,7 @@ def config_to_json(config: dict | None) -> str | None:
     """
     if config is None:
         return None
-    return json.dumps(config)
+    return json.dumps(config, cls=_ConfigEncoder)
 
 
 def config_from_json(json_str: str | None) -> dict | None:

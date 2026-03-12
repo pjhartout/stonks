@@ -112,6 +112,36 @@ Options:
 - `hardware_interval` — seconds between polls (default 5.0, minimum 1.0)
 - `hardware_gpu` — set to `False` to disable GPU monitoring even when pynvml is installed
 
+## Organize runs
+
+Group related runs, tag them, and add notes:
+
+```python
+with stonks.start_run(
+    "my-experiment",
+    config={"lr": 0.01},
+    group="ablation-lr",
+    job_type="train",
+    tags=["baseline", "v2"],
+    notes="Testing lower learning rate",
+) as run:
+    ...
+```
+
+## Resume a run
+
+Pick up where you left off — useful for preempted jobs or multi-phase training:
+
+```python
+# Resume latest run in experiment
+with stonks.start_run("my-experiment", resume="latest") as run:
+    run.log({"train/loss": 0.3}, step=100)
+
+# Resume a specific run by ID
+with stonks.start_run("my-experiment", resume="run_abc123") as run:
+    ...
+```
+
 ## Agent-developed
 
 This library is primarily developed with AI coding agents. I built stonks for my own ML workflow and use agents to move fast on features, tests, and maintenance. The codebase is structured to be agent-friendly (clear conventions, comprehensive tests, strict linting) but the design decisions and direction are mine.
@@ -123,7 +153,25 @@ stonks serve
 # Open http://127.0.0.1:8000
 ```
 
-Live metric charts, run comparison, config diffs — all updating in real time via SSE.
+The dashboard updates in real time via SSE and includes:
+
+- **Multi-run metric overlay** — select up to 8 runs and compare metrics side by side on the same chart
+- **Config comparison** — side-by-side table showing hyperparameter differences across selected runs
+- **Run renaming** — double-click a run name to rename it inline
+- **Custom run colors** — pick per-run colors for chart lines
+- **Hardware monitoring panel** — collapsible view of CPU, RAM, disk I/O, network, and GPU metrics
+- **Metric grouping** — charts are automatically grouped by prefix (e.g. `train/`, `val/`)
+
+## CLI
+
+```bash
+stonks ls                           # list experiments
+stonks runs <experiment>            # list runs (--status, --tag filters)
+stonks info                         # database statistics
+stonks export <run-id> -f csv      # export metrics as CSV or JSON
+stonks delete <run-id>              # delete a run (-f to skip confirmation)
+stonks gc --before 30 --status failed  # clean up old/failed runs
+```
 
 ## Query results programmatically
 

@@ -8,6 +8,8 @@ from typing import Any, Literal
 from loguru import logger as log
 
 try:
+    import torch.distributed as torch_dist
+    from lightning.pytorch.callbacks import Callback
     from lightning.pytorch.loggers.logger import Logger, rank_zero_experiment
     from lightning.pytorch.utilities import rank_zero_only
 except ImportError as e:
@@ -16,6 +18,8 @@ except ImportError as e:
     ) from e
 
 from stonks.config import resolve_db_path
+from stonks.distributed import get_distributed_info
+from stonks.hardware import collect_hardware_snapshot
 from stonks.run import Run
 
 
@@ -223,3 +227,180 @@ class StonksLogger(Logger):
             self._run.finish(mapped_status)
             self._run = None
             log.info(f"StonksLogger finalized with status '{mapped_status}'")
+
+
+class StonksDistributedCallback(Callback):
+    """Lightning Callback for multi-rank metric and hardware gathering.
+
+    Collects per-rank metrics and hardware stats from all distributed
+    processes and logs them through the StonksLogger on rank 0.
+
+    Use alongside StonksLogger in distributed training::
+
+        logger = StonksLogger(experiment="distributed-run")
+        callback = StonksDistributedCallback(
+            metric_keys=["train_loss", "val_loss"],
+            hardware=True,
+        )
+        trainer = pl.Trainer(logger=logger, callbacks=[callback])
+
+    Args:
+        metric_keys: Metric keys to gather per-rank. If None, gathers all
+            metrics from trainer.callback_metrics.
+        gather_interval: Gather per-rank metrics every N training steps.
+            Set higher to reduce communication overhead.
+        hardware: If True, gather hardware snapshots from all ranks.
+        hardware_interval: Gather hardware every N training steps.
+        hardware_gpu: Whether to collect GPU metrics in hardware snapshots.
+    """
+
+    def __init__(
+        self,
+        metric_keys: list[str] | None = None,
+        gather_interval: int = 1,
+        hardware: bool = True,
+        hardware_interval: int = 10,
+        hardware_gpu: bool = True,
+    ) -> None:
+        super().__init__()
+        self._metric_keys = metric_keys
+        self._gather_interval = max(1, gather_interval)
+        self._hardware = hardware
+        self._hardware_interval = max(1, hardware_interval)
+        self._hardware_gpu = hardware_gpu
+
+    def setup(
+        self,
+        trainer: Any,
+        pl_module: Any,
+        stage: str | None = None,
+    ) -> None:
+        """Log distributed metadata on rank 0 when training starts.
+
+        Args:
+            trainer: The Lightning Trainer.
+            pl_module: The LightningModule.
+            stage: Current stage (fit, validate, test, predict).
+        """
+        if not torch_dist.is_initialized():
+            log.warning(
+                "StonksDistributedCallback: torch.distributed not initialized, "
+                "callback will be inactive"
+            )
+            return
+
+        if torch_dist.get_rank() == 0:
+            stonks_logger = self._get_stonks_logger(trainer)
+            if stonks_logger is not None:
+                info = get_distributed_info()
+                run = stonks_logger._ensure_run()
+                run.log_config({"distributed": info})
+                log.info(
+                    f"Logged distributed metadata: "
+                    f"world_size={info['world_size']}, num_nodes={info['num_nodes']}"
+                )
+
+    def on_train_batch_end(
+        self,
+        trainer: Any,
+        pl_module: Any,
+        outputs: Any,
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
+        """Gather per-rank metrics and hardware after each training batch.
+
+        Args:
+            trainer: The Lightning Trainer.
+            pl_module: The LightningModule.
+            outputs: Output of training_step.
+            batch: The current batch.
+            batch_idx: Index of the current batch.
+        """
+        if not torch_dist.is_initialized():
+            return
+
+        step = trainer.global_step
+
+        if step % self._gather_interval == 0:
+            self._gather_and_log_metrics(trainer, step)
+
+        if self._hardware and step % self._hardware_interval == 0:
+            self._gather_and_log_hardware(trainer, step)
+
+    def _gather_and_log_metrics(self, trainer: Any, step: int) -> None:
+        """Gather per-rank metrics from all processes and log on rank 0.
+
+        Args:
+            trainer: The Lightning Trainer.
+            step: Current global step.
+        """
+        world_size = torch_dist.get_world_size()
+        rank = torch_dist.get_rank()
+
+        local_metrics: dict[str, float] = {}
+        if self._metric_keys:
+            for key in self._metric_keys:
+                if key in trainer.callback_metrics:
+                    val = trainer.callback_metrics[key]
+                    local_metrics[key] = val.item() if hasattr(val, "item") else float(val)
+        else:
+            for key, val in trainer.callback_metrics.items():
+                local_metrics[key] = val.item() if hasattr(val, "item") else float(val)
+
+        gathered: list[dict[str, float] | None] = [None] * world_size
+        torch_dist.all_gather_object(gathered, local_metrics)
+
+        if rank == 0:
+            stonks_logger = self._get_stonks_logger(trainer)
+            if stonks_logger is not None:
+                per_rank_metrics: dict[str, float] = {}
+                for r, metrics in enumerate(gathered):
+                    if metrics:
+                        for k, v in metrics.items():
+                            per_rank_metrics[f"rank_{r}/{k}"] = v
+                if per_rank_metrics:
+                    stonks_logger.log_metrics(per_rank_metrics, step=step)
+
+    def _gather_and_log_hardware(self, trainer: Any, step: int) -> None:
+        """Gather hardware snapshots from all ranks and log on rank 0.
+
+        Args:
+            trainer: The Lightning Trainer.
+            step: Current global step.
+        """
+        world_size = torch_dist.get_world_size()
+        rank = torch_dist.get_rank()
+
+        local_hw = collect_hardware_snapshot(enable_gpu=self._hardware_gpu)
+
+        gathered: list[dict[str, float] | None] = [None] * world_size
+        torch_dist.all_gather_object(gathered, local_hw)
+
+        if rank == 0:
+            stonks_logger = self._get_stonks_logger(trainer)
+            if stonks_logger is not None:
+                hw_metrics: dict[str, float] = {}
+                for r, metrics in enumerate(gathered):
+                    if metrics:
+                        for k, v in metrics.items():
+                            hw_metrics[f"rank_{r}/{k}"] = v
+                if hw_metrics:
+                    stonks_logger.log_metrics(hw_metrics, step=step)
+
+    def _get_stonks_logger(self, trainer: Any) -> StonksLogger | None:
+        """Find the StonksLogger in the trainer's loggers.
+
+        Args:
+            trainer: The Lightning Trainer.
+
+        Returns:
+            The StonksLogger instance, or None if not found.
+        """
+        if isinstance(trainer.logger, StonksLogger):
+            return trainer.logger
+        if hasattr(trainer, "loggers"):
+            for lg in trainer.loggers:
+                if isinstance(lg, StonksLogger):
+                    return lg
+        return None
