@@ -8,17 +8,15 @@ services:
     environment:
       - STONKS_DB=/data/stonks.db
 
-  trainer:
+  sync:
     build: .
-    entrypoint: ["uv", "run", "python", "examples/fake_trainer.py"]
+    command: ["sync", "--watch", "--interval", "10"]
     volumes:
       - stonks-data:/data
+      - ${SSH_KEY_PATH:-~/.ssh}:/root/.ssh:ro
+      - ${STONKS_CONFIG:-~/.stonks/remotes.toml}:/root/.stonks/remotes.toml:ro
     environment:
       - STONKS_DB=/data/stonks.db
-      - EXPERIMENT=debug-experiment
-      - TRAIN_EPOCHS=50
-      - STEPS_PER_EPOCH=20
-      - STEP_DELAY=0.3
     depends_on:
       - dashboard
 

@@ -8,7 +8,13 @@ RUN bun install && bun run build
 
 # Stage 2: Python runtime
 FROM python:3.11-slim
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Install rsync and openssh-client for sync feature
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends rsync openssh-client && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -29,4 +35,5 @@ RUN uv sync --frozen --extra server --no-dev
 ENV STONKS_DB=/data/stonks.db
 EXPOSE 8000
 
-ENTRYPOINT ["uv", "run", "stonks", "serve", "--host", "0.0.0.0"]
+ENTRYPOINT ["uv", "run", "stonks"]
+CMD ["serve", "--host", "0.0.0.0"]
