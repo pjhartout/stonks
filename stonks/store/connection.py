@@ -7,7 +7,7 @@ from pathlib import Path
 
 from loguru import logger
 
-_SCHEMA_STATEMENTS = [
+_TABLE_STATEMENTS = [
     """CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
@@ -46,6 +46,9 @@ _SCHEMA_STATEMENTS = [
         timestamp REAL NOT NULL,
         FOREIGN KEY (run_id) REFERENCES runs(id)
     )""",
+]
+
+_INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_metrics_run_key_step ON metrics(run_id, key, step)",
     "CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp ON metrics(run_id, timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_runs_experiment ON runs(experiment_id, created_at DESC)",
@@ -105,11 +108,13 @@ def initialize_db(conn: sqlite3.Connection) -> None:
     Args:
         conn: Active database connection.
     """
-    for statement in _SCHEMA_STATEMENTS:
+    # 1. Create tables (no-op if they already exist).
+    for statement in _TABLE_STATEMENTS:
         conn.execute(statement)
     conn.commit()
 
-    # Migrate existing databases: add columns that may not exist yet.
+    # 2. Migrate existing databases: add columns that may not exist yet.
+    #    Must run before index creation since indexes may reference new columns.
     for table, column, sql in _MIGRATION_COLUMNS:
         if column is None:
             # Table creation (already handled by CREATE TABLE IF NOT EXISTS above)
@@ -120,5 +125,10 @@ def initialize_db(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError:
             # Column already exists — expected for fresh or already-migrated DBs.
             pass
+
+    # 3. Create indexes (safe now that all columns exist).
+    for statement in _INDEX_STATEMENTS:
+        conn.execute(statement)
+    conn.commit()
 
     logger.debug("Database schema initialized")

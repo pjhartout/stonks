@@ -137,16 +137,13 @@ def _rsync_file(remote: RemoteConfig, remote_path: str, local_path: Path) -> boo
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             logger.warning(
                 f"rsync failed for '{remote.name}' ({remote_path}): {result.stderr.strip()}"
             )
             return False
         return True
-    except subprocess.TimeoutExpired:
-        logger.warning(f"rsync timed out for '{remote.name}' ({remote_path})")
-        return False
     except FileNotFoundError:
         logger.error("rsync not found. Install rsync to use sync feature.")
         return False
