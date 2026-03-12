@@ -22,29 +22,44 @@ class SyncConfigError(StonksError):
 class RemoteConfig:
     """Configuration for a single remote stonks database.
 
+    Either `db_path` (single file) or `scan_dir` (find all stonks.db under
+    a directory) must be set.
+
     Attributes:
         name: Alias for this remote (from TOML section key).
         host: SSH host string (e.g. "user@hostname" or "hostname").
-        db_path: Absolute path to stonks.db on the remote machine.
+        db_path: Absolute path to a single stonks.db on the remote.
+        scan_dir: Directory to scan for all stonks.db files on the remote.
         ssh_key: Optional path to SSH private key.
         port: SSH port (default 22).
     """
 
     name: str
     host: str
-    db_path: str
+    db_path: str | None = None
+    scan_dir: str | None = None
     ssh_key: str | None = None
     port: int = 22
 
     @property
+    def staging_dir(self) -> Path:
+        """Local staging directory for this remote's synced databases."""
+        return DEFAULT_SYNC_DIR / self.name
+
+    @property
     def staging_path(self) -> Path:
-        """Local staging path for this remote's synced database."""
-        return DEFAULT_SYNC_DIR / self.name / "stonks.db"
+        """Local staging path for a single-file remote's database."""
+        return self.staging_dir / "stonks.db"
 
     @property
     def rsync_source(self) -> str:
-        """Full rsync source string (host:path)."""
+        """Full rsync source string (host:path). Only for single-file mode."""
         return f"{self.host}:{self.db_path}"
+
+    @property
+    def is_scan_mode(self) -> bool:
+        """Whether this remote scans a directory for multiple DBs."""
+        return self.scan_dir is not None
 
 
 def parse_remotes_config(config_path: Path | None = None) -> list[RemoteConfig]:
@@ -87,8 +102,12 @@ def parse_remotes_config(config_path: Path | None = None) -> list[RemoteConfig]:
             raise SyncConfigError(f"Remote '{name}' is missing required 'host' field")
 
         db_path = entry.get("db_path")
-        if not db_path or not isinstance(db_path, str):
-            raise SyncConfigError(f"Remote '{name}' is missing required 'db_path' field")
+        scan_dir = entry.get("scan_dir")
+
+        if not db_path and not scan_dir:
+            raise SyncConfigError(f"Remote '{name}' must have either 'db_path' or 'scan_dir'")
+        if db_path and scan_dir:
+            raise SyncConfigError(f"Remote '{name}' cannot have both 'db_path' and 'scan_dir'")
 
         ssh_key = entry.get("ssh_key")
         if ssh_key is not None:
@@ -103,6 +122,7 @@ def parse_remotes_config(config_path: Path | None = None) -> list[RemoteConfig]:
                 name=name,
                 host=host,
                 db_path=db_path,
+                scan_dir=scan_dir,
                 ssh_key=ssh_key,
                 port=port,
             )

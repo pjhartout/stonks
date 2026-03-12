@@ -32,6 +32,18 @@ class TestRemoteConfig:
         assert remote.port == 22
         assert remote.ssh_key is None
 
+    def test_is_scan_mode_false(self):
+        remote = RemoteConfig(name="gpu1", host="user@host", db_path="/data/stonks.db")
+        assert remote.is_scan_mode is False
+
+    def test_is_scan_mode_true(self):
+        remote = RemoteConfig(name="gpu1", host="user@host", scan_dir="/data/logs")
+        assert remote.is_scan_mode is True
+
+    def test_staging_dir(self):
+        remote = RemoteConfig(name="gpu1", host="user@host", scan_dir="/data/logs")
+        assert "gpu1" in str(remote.staging_dir)
+
 
 class TestParseRemotesConfig:
     def test_valid_config(self, config_file):
@@ -84,10 +96,26 @@ class TestParseRemotesConfig:
         with pytest.raises(SyncConfigError, match="missing required 'host'"):
             parse_remotes_config(path)
 
-    def test_missing_db_path(self, config_file):
+    def test_missing_db_path_and_scan_dir(self, config_file):
         path = config_file('[remotes.gpu1]\nhost = "user@host"\n')
-        with pytest.raises(SyncConfigError, match="missing required 'db_path'"):
+        with pytest.raises(SyncConfigError, match="must have either"):
             parse_remotes_config(path)
+
+    def test_both_db_path_and_scan_dir(self, config_file):
+        path = config_file(
+            '[remotes.gpu1]\nhost = "user@host"\n'
+            'db_path = "/data/stonks.db"\nscan_dir = "/data/logs"\n'
+        )
+        with pytest.raises(SyncConfigError, match="cannot have both"):
+            parse_remotes_config(path)
+
+    def test_scan_dir_config(self, config_file):
+        path = config_file('[remotes.mn5]\nhost = "user@mn5"\nscan_dir = "/gpfs/projects/logs"\n')
+        remotes = parse_remotes_config(path)
+        assert len(remotes) == 1
+        assert remotes[0].scan_dir == "/gpfs/projects/logs"
+        assert remotes[0].db_path is None
+        assert remotes[0].is_scan_mode is True
 
     def test_invalid_port(self, config_file):
         path = config_file('[remotes.gpu1]\nhost = "user@host"\ndb_path = "/d.db"\nport = "abc"\n')

@@ -23,109 +23,245 @@ class SyncError(StonksError):
     """Error during sync operation."""
 
 
-def _build_rsync_command(remote: RemoteConfig) -> list[str]:
-    """Build the rsync command for a remote.
+def _build_ssh_command(remote: RemoteConfig) -> list[str]:
+    """Build the base SSH command options for a remote.
 
     Args:
         remote: Remote configuration.
 
     Returns:
-        List of command-line arguments for subprocess.
+        List of SSH command-line arguments.
     """
-    ssh_opts = (
+    cmd = [
+        "ssh",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "-p",
+        str(remote.port),
+    ]
+    if remote.ssh_key:
+        cmd.extend(["-i", remote.ssh_key])
+    cmd.append(remote.host)
+    return cmd
+
+
+def _build_ssh_opts(remote: RemoteConfig) -> str:
+    """Build the SSH options string for rsync -e flag.
+
+    Args:
+        remote: Remote configuration.
+
+    Returns:
+        SSH options string.
+    """
+    opts = (
         f"ssh -o StrictHostKeyChecking=accept-new "
         f"-o ConnectTimeout=10 -o BatchMode=yes "
         f"-p {remote.port}"
     )
     if remote.ssh_key:
-        ssh_opts += f" -i {remote.ssh_key}"
-
-    return [
-        "rsync",
-        "-az",
-        "--whole-file",
-        "-e",
-        ssh_opts,
-        remote.rsync_source,
-        str(remote.staging_path),
-    ]
+        opts += f" -i {remote.ssh_key}"
+    return opts
 
 
-def pull_remote(remote: RemoteConfig) -> bool:
-    """Pull a remote database via rsync.
-
-    Creates the staging directory if needed and runs rsync.
+def _discover_remote_dbs(remote: RemoteConfig) -> list[str]:
+    """Discover all stonks.db files under a remote scan_dir via SSH.
 
     Args:
-        remote: Remote configuration.
+        remote: Remote configuration with scan_dir set.
 
     Returns:
-        True if the pull succeeded, False otherwise.
+        List of absolute paths to stonks.db files on the remote.
     """
-    remote.staging_path.parent.mkdir(parents=True, exist_ok=True)
-
-    cmd = _build_rsync_command(remote)
-    logger.debug(f"Running rsync for '{remote.name}': {' '.join(cmd)}")
+    assert remote.scan_dir is not None
+    cmd: list[str] = _build_ssh_command(remote) + [
+        "find",
+        remote.scan_dir,
+        "-name",
+        "stonks.db",
+        "-type",
+        "f",
+    ]
+    logger.debug(f"Discovering DBs on '{remote.name}': {' '.join(cmd)}")
 
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=120,
         )
         if result.returncode != 0:
             logger.warning(
-                f"rsync failed for '{remote.name}' (exit {result.returncode}): "
+                f"DB discovery failed for '{remote.name}' (exit {result.returncode}): "
                 f"{result.stderr.strip()}"
+            )
+            return []
+
+        paths = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+        logger.debug(f"Found {len(paths)} database(s) on '{remote.name}'")
+        return paths
+    except subprocess.TimeoutExpired:
+        logger.warning(f"DB discovery timed out for '{remote.name}'")
+        return []
+    except FileNotFoundError:
+        logger.error("ssh not found.")
+        return []
+
+
+def _rsync_file(remote: RemoteConfig, remote_path: str, local_path: Path) -> bool:
+    """Rsync a single file from a remote.
+
+    Args:
+        remote: Remote configuration.
+        remote_path: Absolute path on the remote.
+        local_path: Local destination path.
+
+    Returns:
+        True if successful.
+    """
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "rsync",
+        "-az",
+        "--whole-file",
+        "-e",
+        _build_ssh_opts(remote),
+        f"{remote.host}:{remote_path}",
+        str(local_path),
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            logger.warning(
+                f"rsync failed for '{remote.name}' ({remote_path}): {result.stderr.strip()}"
             )
             return False
         return True
     except subprocess.TimeoutExpired:
-        logger.warning(f"rsync timed out for '{remote.name}'")
+        logger.warning(f"rsync timed out for '{remote.name}' ({remote_path})")
         return False
     except FileNotFoundError:
         logger.error("rsync not found. Install rsync to use sync feature.")
         return False
 
 
+def pull_remote(remote: RemoteConfig) -> bool:
+    """Pull a remote database via rsync (single-file mode).
+
+    Args:
+        remote: Remote configuration with db_path set.
+
+    Returns:
+        True if the pull succeeded.
+    """
+    assert remote.db_path is not None
+    return _rsync_file(remote, remote.db_path, remote.staging_path)
+
+
+def pull_remote_scan(remote: RemoteConfig) -> list[Path]:
+    """Discover and pull all stonks.db files from a remote scan_dir.
+
+    Args:
+        remote: Remote configuration with scan_dir set.
+
+    Returns:
+        List of local paths to successfully pulled database files.
+    """
+    remote_paths = _discover_remote_dbs(remote)
+    if not remote_paths:
+        return []
+
+    pulled: list[Path] = []
+    for i, remote_path in enumerate(remote_paths):
+        # Stage each DB in a unique subfolder to avoid collisions
+        local_path = remote.staging_dir / f"db_{i}" / "stonks.db"
+        if _rsync_file(remote, remote_path, local_path):
+            pulled.append(local_path)
+
+    logger.debug(f"Pulled {len(pulled)}/{len(remote_paths)} databases from '{remote.name}'")
+    return pulled
+
+
+def _merge_single_db(
+    source_path: Path,
+    target_conn,
+    remote_name: str,
+    label: str,
+) -> MergeStats | None:
+    """Merge a single source DB into the target, with integrity check.
+
+    Args:
+        source_path: Path to the source database.
+        target_conn: Target database connection.
+        remote_name: Name of the remote for stats.
+        label: Label for logging.
+
+    Returns:
+        MergeStats if successful, None otherwise.
+    """
+    if not check_integrity(source_path):
+        logger.warning(f"Integrity check failed for '{label}', skipping")
+        return None
+
+    try:
+        return merge_remote_db(
+            source_path=source_path,
+            target_conn=target_conn,
+            remote_name=remote_name,
+        )
+    except MergeError as e:
+        logger.error(f"Merge failed for '{label}': {e}")
+        return None
+
+
 def sync_remote(
     remote: RemoteConfig,
     target_db_path: Path,
-) -> MergeStats | None:
+) -> list[MergeStats]:
     """Pull and merge a single remote.
+
+    Handles both single-file and scan_dir modes.
 
     Args:
         remote: Remote configuration.
         target_db_path: Path to the local target database.
 
     Returns:
-        MergeStats if successful, None if the pull or merge failed.
+        List of MergeStats for successful merges.
     """
-    if not pull_remote(remote):
-        return None
-
-    if not remote.staging_path.exists():
-        logger.warning(f"No database found after pull for '{remote.name}'")
-        return None
-
-    if not check_integrity(remote.staging_path):
-        logger.warning(f"Integrity check failed for '{remote.name}', skipping merge")
-        return None
+    results: list[MergeStats] = []
 
     target_conn = create_connection(target_db_path)
     initialize_db(target_conn)
+
     try:
-        return merge_remote_db(
-            source_path=remote.staging_path,
-            target_conn=target_conn,
-            remote_name=remote.name,
-        )
-    except MergeError as e:
-        logger.error(f"Merge failed for '{remote.name}': {e}")
-        return None
+        if remote.is_scan_mode:
+            pulled_paths = pull_remote_scan(remote)
+            for i, path in enumerate(pulled_paths):
+                label = f"{remote.name}[{i}]"
+                stats = _merge_single_db(path, target_conn, remote.name, label)
+                if stats is not None:
+                    results.append(stats)
+        else:
+            if not pull_remote(remote):
+                return results
+            if not remote.staging_path.exists():
+                logger.warning(f"No database found after pull for '{remote.name}'")
+                return results
+            stats = _merge_single_db(remote.staging_path, target_conn, remote.name, remote.name)
+            if stats is not None:
+                results.append(stats)
     finally:
         target_conn.close()
+
+    return results
 
 
 def sync_all(
@@ -143,9 +279,7 @@ def sync_all(
     """
     results: list[MergeStats] = []
     for remote in remotes:
-        stats = sync_remote(remote, target_db_path)
-        if stats is not None:
-            results.append(stats)
+        results.extend(sync_remote(remote, target_db_path))
     return results
 
 

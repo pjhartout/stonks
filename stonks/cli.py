@@ -370,11 +370,13 @@ def remote_command(args: argparse.Namespace) -> None:
         return
 
     if args.remote_action == "list":
-        header = f"{'NAME':<20} {'HOST':<35} {'DB PATH':<40}"
+        header = f"{'NAME':<20} {'HOST':<35} {'PATH':<40} {'MODE':<10}"
         print(header)
         print("-" * len(header))
         for r in remotes:
-            print(f"{r.name:<20} {r.host:<35} {r.db_path:<40}")
+            path = r.scan_dir or r.db_path or ""
+            mode = "scan" if r.is_scan_mode else "file"
+            print(f"{r.name:<20} {r.host:<35} {path:<40} {mode:<10}")
 
     elif args.remote_action == "check":
         import subprocess

@@ -103,9 +103,24 @@ def merge_remote_db(
         target_conn.execute("BEGIN")
 
         # Phase 1: Build project ID mapping (source_id -> target_id)
-        project_map = _merge_projects(target_conn, stats)
+        # Handle older DBs that don't have a projects table
+        source_tables = {
+            row[0]
+            for row in target_conn.execute(
+                "SELECT name FROM source.sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if "projects" in source_tables:
+            project_map = _merge_projects(target_conn, stats)
+        else:
+            project_map = {}
 
         # Phase 2: Build experiment ID mapping (source_id -> target_id)
+        if "experiments" not in source_tables:
+            logger.warning(f"Source DB for '{remote_name}' has no experiments table, skipping")
+            target_conn.execute("ROLLBACK")
+            target_conn.execute("DETACH DATABASE source")
+            return stats
         experiment_map = _merge_experiments(target_conn, project_map, stats)
 
         # Phase 3: Merge runs and metrics
