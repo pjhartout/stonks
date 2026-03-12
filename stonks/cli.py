@@ -9,6 +9,7 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 from loguru import logger
 
@@ -348,6 +349,103 @@ def gc_command(args: argparse.Namespace) -> None:
     conn.close()
 
 
+def remote_command(args: argparse.Namespace) -> None:
+    """Manage remote stonks databases.
+
+    Args:
+        args: Parsed CLI arguments with remote_action.
+    """
+    from stonks.sync.config import SyncConfigError, parse_remotes_config
+
+    config_path = Path(args.config) if args.config else None
+
+    try:
+        remotes = parse_remotes_config(config_path)
+    except SyncConfigError as e:
+        print(f"Config error: {e}")
+        sys.exit(1)
+
+    if not remotes:
+        print("No remotes configured.")
+        return
+
+    if args.remote_action == "list":
+        header = f"{'NAME':<20} {'HOST':<35} {'DB PATH':<40}"
+        print(header)
+        print("-" * len(header))
+        for r in remotes:
+            print(f"{r.name:<20} {r.host:<35} {r.db_path:<40}")
+
+    elif args.remote_action == "check":
+        import subprocess
+
+        for r in remotes:
+            ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
+            if r.ssh_key:
+                ssh_cmd.extend(["-i", r.ssh_key])
+            ssh_cmd.extend(["-p", str(r.port), r.host, "test", "-f", r.db_path])
+
+            try:
+                result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    print(f"  {r.name}: OK")
+                else:
+                    print(f"  {r.name}: FAILED (SSH ok, file not found)")
+            except subprocess.TimeoutExpired:
+                print(f"  {r.name}: FAILED (timeout)")
+            except FileNotFoundError:
+                print(f"  {r.name}: FAILED (ssh not found)")
+
+
+def sync_command(args: argparse.Namespace) -> None:
+    """Sync remote databases to local.
+
+    Args:
+        args: Parsed CLI arguments with watch, interval, config.
+    """
+    from stonks.sync.config import SyncConfigError, parse_remotes_config
+    from stonks.sync.daemon import SyncError, run_sync_daemon, sync_all
+
+    target_db_path = resolve_db_path(args.db)
+    config_path = Path(args.config) if args.config else None
+
+    if args.watch:
+        try:
+            run_sync_daemon(
+                target_db_path=target_db_path,
+                config_path=config_path,
+                interval=args.interval,
+            )
+        except SyncError as e:
+            print(f"Sync error: {e}")
+            sys.exit(1)
+    else:
+        # One-shot sync
+        try:
+            remotes = parse_remotes_config(config_path)
+        except SyncConfigError as e:
+            print(f"Config error: {e}")
+            sys.exit(1)
+
+        if not remotes:
+            print("No remotes configured.")
+            return
+
+        print(f"Syncing {len(remotes)} remote(s) to {target_db_path}...")
+        results = sync_all(remotes, target_db_path)
+
+        if not results:
+            print("No remotes synced successfully.")
+            sys.exit(1)
+
+        for s in results:
+            print(
+                f"  {s.remote_name}: {s.new_runs} new, "
+                f"{s.updated_runs} updated, {s.skipped_runs} skipped runs"
+            )
+        print("Done.")
+
+
 def demo_command(args: argparse.Namespace) -> None:
     """Run the stonks demo with generated sample data.
 
@@ -518,6 +616,40 @@ def main() -> None:
         help="Only generate data, don't start the server",
     )
 
+    # sync
+    sync_parser = subparsers.add_parser("sync", help="Sync remote databases to local")
+    sync_parser.add_argument("--db", type=str, default=None, help="Target database path")
+    sync_parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to remotes.toml (default: ~/.stonks/remotes.toml)",
+    )
+    sync_parser.add_argument(
+        "--watch",
+        action="store_true",
+        default=False,
+        help="Run as daemon, syncing every --interval seconds",
+    )
+    sync_parser.add_argument(
+        "--interval",
+        type=int,
+        default=10,
+        help="Seconds between sync cycles in watch mode (default: 10)",
+    )
+
+    # remote
+    remote_parser = subparsers.add_parser("remote", help="Manage remote databases")
+    remote_parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to remotes.toml (default: ~/.stonks/remotes.toml)",
+    )
+    remote_subparsers = remote_parser.add_subparsers(dest="remote_action")
+    remote_subparsers.add_parser("list", help="List configured remotes")
+    remote_subparsers.add_parser("check", help="Check SSH connectivity to remotes")
+
     args = parser.parse_args()
 
     commands = {
@@ -529,6 +661,8 @@ def main() -> None:
         "export": export_command,
         "gc": gc_command,
         "demo": demo_command,
+        "sync": sync_command,
+        "remote": remote_command,
     }
 
     if args.command in commands:
