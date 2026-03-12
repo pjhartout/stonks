@@ -10,6 +10,19 @@
   let chart: uPlot | null = null;
   let ro: ResizeObserver | null = null;
   let lastSeriesKey = "";
+  let themeClass = $state(document.documentElement.classList.contains("light") ? "light" : "dark");
+
+  // Watch for theme changes on <html> element
+  $effect(() => {
+    const observer = new MutationObserver(() => {
+      const newTheme = document.documentElement.classList.contains("light") ? "light" : "dark";
+      if (newTheme !== themeClass) {
+        themeClass = newTheme;
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  });
 
   function escapeHtml(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -157,6 +170,10 @@
     };
   }
 
+  function readCssVar(name: string): string {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
   function createChart(el: HTMLDivElement, runSeries: RunSeries[]) {
     const data = mergeRunSeries(runSeries);
 
@@ -170,6 +187,11 @@
       })),
     ];
 
+    const axisStroke = readCssVar("--chart-axis");
+    const gridStroke = readCssVar("--chart-grid");
+    const gridStrokeStrong = readCssVar("--chart-grid-strong");
+    const axisFont = "11px Inter, sans-serif";
+
     const opts: uPlot.Options = {
       width: el.clientWidth,
       height: 300,
@@ -181,18 +203,18 @@
       },
       axes: [
         {
-          stroke: "#5c6078",
-          grid: { stroke: "#2e334822" },
-          ticks: { stroke: "#2e334822" },
-          font: "11px Inter, sans-serif",
-          labelFont: "11px Inter, sans-serif",
+          stroke: axisStroke,
+          grid: { stroke: gridStroke },
+          ticks: { stroke: gridStroke },
+          font: axisFont,
+          labelFont: axisFont,
         },
         {
-          stroke: "#5c6078",
-          grid: { stroke: "#2e334844" },
-          ticks: { stroke: "#2e334822" },
-          font: "11px Inter, sans-serif",
-          labelFont: "11px Inter, sans-serif",
+          stroke: axisStroke,
+          grid: { stroke: gridStrokeStrong },
+          ticks: { stroke: gridStroke },
+          font: axisFont,
+          labelFont: axisFont,
           size: 60,
         },
       ],
@@ -224,12 +246,13 @@
     };
   });
 
-  // Update data or recreate chart when runs change
+  // Update data or recreate chart when runs or theme change
   $effect(() => {
     if (!container || !runs || runs.length === 0) return;
 
-    const key = seriesKey(runs);
-    // Recreate if series count or colors changed (uPlot series config is immutable)
+    // Include themeClass in the key so theme changes force chart recreation
+    const key = `${seriesKey(runs)}|${themeClass}`;
+    // Recreate if series count, colors, or theme changed (uPlot config is immutable)
     if (chart && key === lastSeriesKey) {
       const data = mergeRunSeries(runs);
       chart.setData(data);
@@ -282,7 +305,7 @@
     border: 1px solid var(--border, #45475a);
     border-radius: 4px;
     white-space: nowrap;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 6px var(--shadow-tooltip, rgba(0, 0, 0, 0.3));
   }
   .chart-container :global(.tt-step) {
     margin-bottom: 2px;
@@ -335,9 +358,9 @@
 
   /* Make the selection box clearly visible */
   .chart-container :global(.u-select) {
-    background: rgba(99, 102, 241, 0.15) !important;
-    border-left: 1px solid rgba(99, 102, 241, 0.6);
-    border-right: 1px solid rgba(99, 102, 241, 0.6);
+    background: var(--chart-select, rgba(99, 102, 241, 0.15)) !important;
+    border-left: 1px solid var(--chart-select-border, rgba(99, 102, 241, 0.6));
+    border-right: 1px solid var(--chart-select-border, rgba(99, 102, 241, 0.6));
   }
 
   /* Dim overlay for areas outside selection */
@@ -345,6 +368,6 @@
     position: absolute;
     z-index: 1;
     pointer-events: none;
-    background: rgba(0, 0, 0, 0.35);
+    background: var(--chart-dim, rgba(0, 0, 0, 0.35));
   }
 </style>

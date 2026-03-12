@@ -19,6 +19,8 @@ def downsample_minmax(series: MetricSeries, target_points: int) -> MetricSeries:
         A new MetricSeries with at most target_points entries.
     """
     n = len(series.steps)
+    if n == 0:
+        return MetricSeries(key=series.key)
     if n <= target_points or target_points < 2:
         return series
 

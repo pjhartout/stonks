@@ -12,14 +12,14 @@ def app(db_path):
     """Create a FastAPI app with a test database."""
     db = str(db_path)
     # Seed some data
-    with stonks.start_run("exp-alpha", db=db, config={"lr": 0.001}) as run:
+    with stonks.start_run("exp-alpha", save_dir=db, config={"lr": 0.001}) as run:
         run.log({"train/loss": 1.0, "train/acc": 0.5}, step=0)
         run.log({"train/loss": 0.5, "train/acc": 0.8}, step=1)
 
-    with stonks.start_run("exp-alpha", db=db, config={"lr": 0.01}) as run:
+    with stonks.start_run("exp-alpha", save_dir=db, config={"lr": 0.01}) as run:
         run.log({"train/loss": 0.8}, step=0)
 
-    with stonks.start_run("exp-beta", db=db, config={"epochs": 10}) as run:
+    with stonks.start_run("exp-beta", save_dir=db, config={"epochs": 10}) as run:
         run.log({"val/loss": 0.3}, step=0)
 
     return create_app(db)
@@ -178,6 +178,70 @@ class TestRunEndpoints:
         resp = await client.patch("/api/runs/nonexistent-id", json={"name": "x"})
         assert resp.status_code == 404
 
+    async def test_patch_run_tags(self, client):
+        """PATCH /api/runs/{id} with tags updates tags."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.patch(f"/api/runs/{run_id}", json={"tags": ["sweep", "lr-0.01"]})
+        assert resp.status_code == 200
+        assert resp.json()["tags"] == ["sweep", "lr-0.01"]
+
+        # Verify persistence
+        resp = await client.get(f"/api/runs/{run_id}")
+        assert resp.json()["tags"] == ["sweep", "lr-0.01"]
+
+    async def test_patch_run_notes(self, client):
+        """PATCH /api/runs/{id} with notes updates notes."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.patch(f"/api/runs/{run_id}", json={"notes": "Best run so far"})
+        assert resp.status_code == 200
+        assert resp.json()["notes"] == "Best run so far"
+
+        # Verify persistence
+        resp = await client.get(f"/api/runs/{run_id}")
+        assert resp.json()["notes"] == "Best run so far"
+
+    async def test_patch_run_tags_and_notes_together(self, client):
+        """PATCH /api/runs/{id} can update tags and notes in one request."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.patch(
+            f"/api/runs/{run_id}",
+            json={"tags": ["final"], "notes": "Production candidate"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tags"] == ["final"]
+        assert body["notes"] == "Production candidate"
+
+    async def test_patch_run_empty_body_preserves_tags_notes(self, client):
+        """PATCH with empty body does not clear tags or notes."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        # Set tags and notes
+        await client.patch(
+            f"/api/runs/{run_id}",
+            json={"tags": ["keep"], "notes": "Keep this"},
+        )
+        # Empty body should preserve them
+        resp = await client.patch(f"/api/runs/{run_id}", json={})
+        assert resp.status_code == 200
+        assert resp.json()["tags"] == ["keep"]
+        assert resp.json()["notes"] == "Keep this"
+
 
 class TestMetricEndpoints:
     async def test_get_metric_keys(self, client):
@@ -217,7 +281,7 @@ class TestMetricEndpoints:
         """Downsampling reduces the number of points."""
         # Create a run with many data points
         db = str(db_path)
-        with stonks.start_run("big-exp", db=db) as run:
+        with stonks.start_run("big-exp", save_dir=db) as run:
             for step in range(100):
                 run.log({"loss": 1.0 / (step + 1)}, step=step)
 
@@ -257,3 +321,80 @@ class TestMetricEndpoints:
 
         resp = await client.get(f"/api/runs/{run_id}/metrics")
         assert resp.status_code == 422
+
+
+class TestDeleteEndpoints:
+    async def test_delete_run(self, client):
+        """DELETE /api/runs/{id} removes the run and returns 204."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        resp = await client.delete(f"/api/runs/{run_id}")
+        assert resp.status_code == 204
+
+        # Verify it's gone
+        resp = await client.get(f"/api/runs/{run_id}")
+        assert resp.status_code == 404
+
+    async def test_delete_run_not_found(self, client):
+        """DELETE /api/runs/{id} returns 404 for unknown run."""
+        resp = await client.delete("/api/runs/nonexistent-id")
+        assert resp.status_code == 404
+
+    async def test_delete_run_removes_metrics(self, client):
+        """Deleting a run also removes its metrics."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_id = runs_resp.json()[0]["id"]
+
+        # Verify metrics exist before deletion
+        keys_resp = await client.get(f"/api/runs/{run_id}/metric-keys")
+        assert keys_resp.status_code == 200
+        assert len(keys_resp.json()) > 0
+
+        # Delete the run
+        resp = await client.delete(f"/api/runs/{run_id}")
+        assert resp.status_code == 204
+
+        # Metrics endpoint should return 404 since run is gone
+        keys_resp = await client.get(f"/api/runs/{run_id}/metric-keys")
+        assert keys_resp.status_code == 404
+
+    async def test_delete_experiment(self, client):
+        """DELETE /api/experiments/{id} removes experiment and returns 204."""
+        resp = await client.get("/api/experiments")
+        beta = next(e for e in resp.json() if e["name"] == "exp-beta")
+
+        resp = await client.delete(f"/api/experiments/{beta['id']}")
+        assert resp.status_code == 204
+
+        # Verify it's gone
+        resp = await client.get(f"/api/experiments/{beta['id']}")
+        assert resp.status_code == 404
+
+    async def test_delete_experiment_not_found(self, client):
+        """DELETE /api/experiments/{id} returns 404 for unknown experiment."""
+        resp = await client.delete("/api/experiments/nonexistent-id")
+        assert resp.status_code == 404
+
+    async def test_delete_experiment_cascades_to_runs(self, client):
+        """Deleting an experiment removes its runs and their metrics."""
+        resp = await client.get("/api/experiments")
+        alpha = next(e for e in resp.json() if e["name"] == "exp-alpha")
+
+        # Get run IDs before deletion
+        runs_resp = await client.get(f"/api/experiments/{alpha['id']}/runs")
+        run_ids = [r["id"] for r in runs_resp.json()]
+        assert len(run_ids) > 0
+
+        # Delete the experiment
+        resp = await client.delete(f"/api/experiments/{alpha['id']}")
+        assert resp.status_code == 204
+
+        # Verify runs are gone
+        for run_id in run_ids:
+            resp = await client.get(f"/api/runs/{run_id}")
+            assert resp.status_code == 404

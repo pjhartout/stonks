@@ -15,7 +15,13 @@ export interface Run {
   created_at: number;
   ended_at: number | null;
   last_heartbeat: number | null;
+  group: string | null;
+  job_type: string | null;
+  tags: string[];
+  notes: string | null;
 }
+
+export type StatusFilter = "all" | Run["status"];
 
 export interface MetricSeries {
   key: string;

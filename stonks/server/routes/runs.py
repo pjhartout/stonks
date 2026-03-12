@@ -5,10 +5,18 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from stonks.server.dependencies import get_db
-from stonks.store import get_run_by_id, list_runs, update_run_name
+from stonks.store import (
+    delete_run,
+    get_run_by_id,
+    list_runs,
+    update_run_name,
+    update_run_notes,
+    update_run_tags,
+)
 
 router = APIRouter(tags=["runs"])
 
@@ -58,6 +66,8 @@ class RunPatch(BaseModel):
     """Patchable fields on a run."""
 
     name: str | None = Field(default=None, max_length=256)
+    tags: list[str] | None = None
+    notes: str | None = Field(default=None, max_length=4096)
 
 
 @router.patch("/runs/{run_id}")
@@ -79,7 +89,16 @@ def patch_run(run_id: str, body: RunPatch, conn: sqlite3.Connection = Depends(ge
         raise HTTPException(status_code=404, detail="Run not found")
     if "name" in body.model_fields_set:
         update_run_name(conn, run_id, body.name)
-        run = get_run_by_id(conn, run_id)
+    if "tags" in body.model_fields_set:
+        if body.tags is not None:
+            if any(tag == "" for tag in body.tags):
+                raise HTTPException(status_code=422, detail="Tags must not contain empty strings")
+            update_run_tags(conn, run_id, body.tags)
+        else:
+            update_run_tags(conn, run_id, [])
+    if "notes" in body.model_fields_set:
+        update_run_notes(conn, run_id, body.notes or "")
+    run = get_run_by_id(conn, run_id)
     return _run_to_dict(run)
 
 
@@ -100,3 +119,22 @@ def get_run(run_id: str, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return _run_to_dict(run)
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+def delete_run_endpoint(run_id: str, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    """Delete a run and its metrics.
+
+    Args:
+        run_id: The run UUID.
+
+    Returns:
+        204 No Content on success.
+
+    Raises:
+        HTTPException: If run not found.
+    """
+    deleted = delete_run(conn, run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return Response(status_code=204)

@@ -30,7 +30,7 @@ export async function fetchMetricKeys(runId: string): Promise<string[]> {
 
 export async function patchRun(
   runId: string,
-  fields: { name?: string | null },
+  fields: { name?: string | null; tags?: string[]; notes?: string | null },
 ): Promise<Run> {
   const resp = await fetch(`${BASE}/runs/${runId}`, {
     method: "PATCH",
@@ -53,4 +53,20 @@ export async function fetchMetrics(
     params.downsample = String(downsample);
   }
   return get<MetricSeries>(`/runs/${runId}/metrics`, params);
+}
+
+export async function deleteRun(runId: string): Promise<void> {
+  const resp = await fetch(`${BASE}/runs/${runId}`, { method: "DELETE" });
+  if (!resp.ok) {
+    throw new Error(`API error: ${resp.status} ${resp.statusText}`);
+  }
+}
+
+export async function deleteExperiment(experimentId: string): Promise<void> {
+  const resp = await fetch(`${BASE}/experiments/${experimentId}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) {
+    throw new Error(`API error: ${resp.status} ${resp.statusText}`);
+  }
 }

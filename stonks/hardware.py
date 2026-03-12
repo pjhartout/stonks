@@ -28,7 +28,7 @@ class HardwareMonitor:
 
     Args:
         log_fn: Callable accepting (metrics_dict, step) — typically ``MetricBuffer.add``.
-        interval: Seconds between polls. Minimum 1.0.
+        interval: Seconds between polls. Minimum 0.05.
         enable_gpu: Whether to attempt GPU monitoring via pynvml.
     """
 
@@ -39,7 +39,7 @@ class HardwareMonitor:
         enable_gpu: bool = True,
     ) -> None:
         self._log_fn = log_fn
-        self._interval = max(1.0, interval)
+        self._interval = max(0.05, interval)
         self._enable_gpu = enable_gpu and _HAS_PYNVML
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None

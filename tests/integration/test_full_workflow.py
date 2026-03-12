@@ -11,7 +11,7 @@ class TestFullWorkflow:
         db = str(db_path)
 
         # Log some training data
-        with stonks.start_run("my-experiment", db=db, config={"lr": 0.001}) as run:
+        with stonks.start_run("my-experiment", save_dir=db, config={"lr": 0.001}) as run:
             for step in range(10):
                 run.log({"train/loss": 1.0 / (step + 1), "train/acc": step * 0.1}, step=step)
 
@@ -40,7 +40,7 @@ class TestFullWorkflow:
         db = str(db_path)
 
         for i in range(3):
-            with stonks.start_run("shared-exp", db=db, config={"run": i}) as run:
+            with stonks.start_run("shared-exp", save_dir=db, config={"run": i}) as run:
                 run.log({"loss": 1.0 / (i + 1)}, step=0)
 
         with stonks.open(db) as database:
@@ -63,7 +63,7 @@ class TestFullWorkflow:
 
         def log_run(name, experiment):
             try:
-                with stonks.start_run(experiment, db=db, run_name=name) as run:
+                with stonks.start_run(experiment, save_dir=db, name=name) as run:
                     for step in range(50):
                         run.log({"loss": 1.0 / (step + 1)}, step=step)
             except Exception as e:
@@ -89,7 +89,7 @@ class TestFullWorkflow:
         """NaN values should be stored as NULL and returned as None."""
         db = str(db_path)
 
-        with stonks.start_run("nan-test", db=db) as run:
+        with stonks.start_run("nan-test", save_dir=db) as run:
             run.log({"loss": float("nan")}, step=0)
             run.log({"loss": 0.5}, step=1)
 

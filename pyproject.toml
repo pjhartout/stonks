@@ -5,10 +5,17 @@ description = "Lightweight ML experiment tracking"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+keywords = ["machine-learning", "experiment-tracking", "pytorch", "metrics", "dashboard"]
 dependencies = [
     "loguru>=0.7",
     "psutil>=5.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/pjhartout/stonks"
+Repository = "https://github.com/pjhartout/stonks"
+Documentation = "https://github.com/pjhartout/stonks#readme"
+"Bug Tracker" = "https://github.com/pjhartout/stonks/issues"
 
 [project.optional-dependencies]
 lightning = ["lightning>=2.0"]

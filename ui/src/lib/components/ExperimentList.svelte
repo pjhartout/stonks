@@ -6,11 +6,19 @@
     experiments,
     selectedId,
     onSelect,
+    onDelete,
+    isDark,
+    onToggleTheme,
   }: {
     experiments: Experiment[];
     selectedId: string | null;
     onSelect: (id: string) => void;
+    onDelete?: (id: string) => void;
+    isDark: boolean;
+    onToggleTheme: () => void;
   } = $props();
+
+  let confirmDeleteId = $state<string | null>(null);
 
   function formatDate(ts: number): string {
     return new Date(ts * 1000).toLocaleDateString(undefined, {
@@ -20,11 +28,48 @@
       minute: "2-digit",
     });
   }
+
+  function handleDeleteClick(e: Event, id: string) {
+    e.stopPropagation();
+    confirmDeleteId = id;
+  }
+
+  function confirmDelete(e: Event) {
+    e.stopPropagation();
+    if (confirmDeleteId) {
+      onDelete?.(confirmDeleteId);
+      confirmDeleteId = null;
+    }
+  }
+
+  function cancelDelete(e: Event) {
+    e.stopPropagation();
+    confirmDeleteId = null;
+  }
 </script>
 
 <nav class="sidebar">
   <div class="header">
     <h1>stonks</h1>
+    <button class="theme-toggle" onclick={onToggleTheme} title={isDark ? "Switch to light mode" : "Switch to dark mode"}>
+      {#if isDark}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      {:else}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      {/if}
+    </button>
   </div>
 
   {#if experiments.length === 0}
@@ -32,10 +77,9 @@
   {:else}
     <ul class="list">
       {#each experiments as exp (exp.id)}
-        <li>
+        <li class="item-wrapper" class:active={selectedId === exp.id}>
           <button
             class="item"
-            class:active={selectedId === exp.id}
             onclick={() => onSelect(exp.id)}
           >
             <span class="name">{exp.name}</span>
@@ -45,6 +89,23 @@
               {formatDate(exp.created_at)}
             </span>
           </button>
+          {#if confirmDeleteId === exp.id}
+            <span class="confirm-delete">
+              <button class="btn-confirm-yes" onclick={(e) => confirmDelete(e)} title="Delete experiment and all runs">Yes</button>
+              <button class="btn-confirm-no" onclick={(e) => cancelDelete(e)} title="Cancel">No</button>
+            </span>
+          {:else if onDelete}
+            <button
+              class="btn-delete-exp"
+              onclick={(e) => handleDeleteClick(e, exp.id)}
+              title="Delete experiment"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z" />
+                <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4L4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z" />
+              </svg>
+            </button>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -65,6 +126,9 @@
   .header {
     padding: 1rem 1.25rem;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
   h1 {
     font-size: 1.1rem;
@@ -72,40 +136,116 @@
     letter-spacing: -0.02em;
     color: var(--accent);
   }
+  .theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: var(--radius);
+    transition: color 0.15s, background 0.15s;
+  }
+  .theme-toggle:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+  }
   .list {
     list-style: none;
     overflow-y: auto;
     flex: 1;
     padding: 0.5rem;
   }
+  .item-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0 0.75rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .item-wrapper:hover {
+    background: var(--bg-hover);
+  }
+  .item-wrapper.active {
+    background: var(--bg-active);
+    border-left: 2px solid var(--accent);
+  }
   .item {
     display: flex;
     flex-direction: column;
-    width: 100%;
-    padding: 0.6rem 0.75rem;
+    flex: 1;
+    min-width: 0;
+    padding: 0.6rem 0;
     border: none;
     background: none;
     color: var(--text);
     text-align: left;
     cursor: pointer;
-    border-radius: var(--radius);
     gap: 0.15rem;
     font-family: inherit;
     font-size: inherit;
   }
-  .item:hover {
-    background: var(--bg-hover);
-  }
-  .item.active {
-    background: var(--bg-active);
-    border-left: 2px solid var(--accent);
-  }
   .name {
     font-weight: 500;
     font-size: 0.9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .meta {
     font-size: 0.75rem;
     color: var(--text-muted);
+  }
+  .btn-delete-exp {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0.1rem;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.1s;
+    flex-shrink: 0;
+  }
+  .item-wrapper:hover .btn-delete-exp {
+    opacity: 1;
+  }
+  .btn-delete-exp:hover {
+    color: var(--red);
+    background: rgba(239, 68, 68, 0.1);
+  }
+  .confirm-delete {
+    display: flex;
+    gap: 0.2rem;
+    flex-shrink: 0;
+  }
+  .btn-confirm-yes,
+  .btn-confirm-no {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-confirm-yes {
+    background: var(--red);
+    color: white;
+  }
+  .btn-confirm-yes:hover {
+    opacity: 0.9;
+  }
+  .btn-confirm-no {
+    background: var(--bg-hover);
+    color: var(--text-muted);
+  }
+  .btn-confirm-no:hover {
+    background: var(--bg-active);
   }
 </style>

@@ -153,6 +153,9 @@ def count_runs(conn: sqlite3.Connection, experiment_id: str) -> int:
 def delete_experiment(conn: sqlite3.Connection, experiment_id: str) -> bool:
     """Delete an experiment, all its runs, and their metrics.
 
+    Uses a single transaction with subquery-based deletes for atomicity
+    and to avoid N+1 queries.
+
     Args:
         conn: Active database connection.
         experiment_id: The experiment to delete.
@@ -163,13 +166,17 @@ def delete_experiment(conn: sqlite3.Connection, experiment_id: str) -> bool:
     row = conn.execute("SELECT id FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
     if row is None:
         return False
-    run_rows = conn.execute(
-        "SELECT id FROM runs WHERE experiment_id = ?", (experiment_id,)
-    ).fetchall()
-    for run_row in run_rows:
-        conn.execute("DELETE FROM metrics WHERE run_id = ?", (run_row["id"],))
-    conn.execute("DELETE FROM runs WHERE experiment_id = ?", (experiment_id,))
-    conn.execute("DELETE FROM experiments WHERE id = ?", (experiment_id,))
-    conn.commit()
+    try:
+        conn.execute("BEGIN")
+        conn.execute(
+            "DELETE FROM metrics WHERE run_id IN (SELECT id FROM runs WHERE experiment_id = ?)",
+            (experiment_id,),
+        )
+        conn.execute("DELETE FROM runs WHERE experiment_id = ?", (experiment_id,))
+        conn.execute("DELETE FROM experiments WHERE id = ?", (experiment_id,))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     logger.debug(f"Deleted experiment {experiment_id}")
     return True
