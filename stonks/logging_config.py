@@ -21,7 +21,7 @@ def _resolve_stdout_level() -> str:
     """
     env_level = os.environ.get("STONKS_LOG_LEVEL")
     if env_level is None:
-        return "INFO"
+        return "WARNING"
 
     normalized = env_level.upper().strip()
     if normalized in _VALID_LEVELS:
@@ -29,9 +29,9 @@ def _resolve_stdout_level() -> str:
 
     logger.warning(
         f"Invalid STONKS_LOG_LEVEL '{env_level}', "
-        f"expected one of {sorted(_VALID_LEVELS)}. Falling back to INFO."
+        f"expected one of {sorted(_VALID_LEVELS)}. Falling back to WARNING."
     )
-    return "INFO"
+    return "WARNING"
 
 
 def setup_logging(log_dir: str = "logs") -> None:
@@ -39,8 +39,8 @@ def setup_logging(log_dir: str = "logs") -> None:
 
     The stdout log level can be controlled via the STONKS_LOG_LEVEL
     environment variable. Accepted values: DEBUG, INFO, WARNING, ERROR.
-    Invalid values log a warning and fall back to INFO. The file log
-    level is always DEBUG regardless of the env var.
+    Invalid values log a warning and fall back to WARNING. The file log
+    level is always WARNING regardless of the env var.
 
     Args:
         log_dir: Directory to store log files.
@@ -70,7 +70,7 @@ def setup_logging(log_dir: str = "logs") -> None:
 
     logger.add(
         str(log_path / "stonks_{time}.log"),
-        level="DEBUG",
+        level="WARNING",
         format=("{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}"),
         rotation="1 day",
         retention="1 week",
