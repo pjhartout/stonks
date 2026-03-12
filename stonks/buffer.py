@@ -49,7 +49,7 @@ class MetricBuffer:
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._flush_loop, daemon=True)
         self._thread.start()
-        logger.debug("MetricBuffer flush thread started")
+        logger.trace("MetricBuffer flush thread started")
 
     def stop(self) -> None:
         """Stop the background flush thread and flush remaining data."""
@@ -59,7 +59,7 @@ class MetricBuffer:
         self._thread.join(timeout=5.0)
         self._thread = None
         self.flush()
-        logger.debug("MetricBuffer flush thread stopped")
+        logger.trace("MetricBuffer flush thread stopped")
 
     def add(self, metrics: dict[str, int | float], step: int) -> None:
         """Add metrics to the buffer.
@@ -107,7 +107,7 @@ class MetricBuffer:
         self._buffer.clear()
         try:
             self._flush_fn(batch)
-            logger.debug(f"Flushed {len(batch)} metrics")
+            logger.trace(f"Flushed {len(batch)} metrics")
         except Exception:
             logger.exception(f"Failed to flush {len(batch)} metrics")
             if self._strict:
