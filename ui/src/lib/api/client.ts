@@ -55,6 +55,17 @@ export async function fetchMetrics(
   return get<MetricSeries>(`/runs/${runId}/metrics`, params);
 }
 
+export async function fetchAllMetrics(
+  runId: string,
+  downsample?: number,
+): Promise<Record<string, MetricSeries>> {
+  const params: Record<string, string> = {};
+  if (downsample) {
+    params.downsample = String(downsample);
+  }
+  return get<Record<string, MetricSeries>>(`/runs/${runId}/metrics/all`, params);
+}
+
 export async function deleteRun(runId: string): Promise<void> {
   const resp = await fetch(`${BASE}/runs/${runId}`, { method: "DELETE" });
   if (!resp.ok) {

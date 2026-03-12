@@ -69,5 +69,20 @@ services:
     depends_on:
       - backend
 
+  sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: uv run stonks sync --watch --interval 10
+    volumes:
+      - ./stonks:/app/stonks
+      - stonks-data:/data
+      - ${SSH_KEY_PATH:-~/.ssh}:/root/.ssh:ro
+      - ${STONKS_CONFIG:-~/.stonks/remotes.toml}:/root/.stonks/remotes.toml:ro
+    environment:
+      - STONKS_DB=/data/stonks.db
+    depends_on:
+      - backend
+
 volumes:
   stonks-data:

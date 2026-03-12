@@ -161,6 +161,21 @@
     return `Comparing ${selectedRuns.length} runs`;
   });
 
+  type Tab = "runs" | "metrics" | "hardware";
+  let activeTab = $state<Tab>("runs");
+
+  // Auto-switch to metrics tab when a run is first selected
+  let prevSelectedCount = $state(0);
+  $effect(() => {
+    const count = selectedRuns.length;
+    if (count > 0 && prevSelectedCount === 0) {
+      activeTab = "metrics";
+    }
+    prevSelectedCount = count;
+  });
+
+  let hasHardware = $derived(hardwareByKey.size > 0);
+
   function handleTagFilter(tag: string) {
     toggleTagFilter(tag);
   }
@@ -192,46 +207,80 @@
       </div>
     {:else}
       <div class="experiment-view">
-        <section class="runs-section">
-          <h2>Runs</h2>
-          <FilterBar
-            runs={allRuns}
-            {statusFilter}
-            {tagFilters}
-            {searchQuery}
-            onStatusChange={setStatusFilter}
-            onTagToggle={toggleTagFilter}
-            onTagRemove={removeTagFilter}
-            onSearchChange={setSearchQuery}
-            onClearAll={clearAllFilters}
-          />
-          <RunTable
-            runs={filteredRuns}
-            selectedIds={selectedRunIds}
-            primaryId={primaryRunId}
-            {colorOverrides}
-            onSelect={selectRun}
-            onToggle={toggleRunSelection}
-            onRename={renameRun}
-            onColorChange={setRunColor}
-            onTagFilter={handleTagFilter}
-            onDeleteRun={deleteRun}
-            onUpdateNotes={updateRunNotes}
-          />
-        </section>
-
-        {#if selectedRuns.length > 0}
-          <section class="metrics-section">
-            <h2>{metricsHeader}</h2>
-
-            {#if hardwareByKey.size > 0}
-              <HardwarePanel metricsByKey={hardwareByKey} />
+        <nav class="tabs">
+          <button
+            class="tab"
+            class:active={activeTab === "runs"}
+            onclick={() => activeTab = "runs"}
+          >
+            Runs
+            <span class="tab-count">{filteredRuns.length}</span>
+          </button>
+          <button
+            class="tab"
+            class:active={activeTab === "metrics"}
+            onclick={() => activeTab = "metrics"}
+            disabled={selectedRuns.length === 0}
+          >
+            Metrics
+            {#if trainingKeys.length > 0}
+              <span class="tab-count">{trainingKeys.length}</span>
             {/if}
+          </button>
+          {#if hasHardware}
+            <button
+              class="tab"
+              class:active={activeTab === "hardware"}
+              onclick={() => activeTab = "hardware"}
+              disabled={selectedRuns.length === 0}
+            >
+              Hardware
+              <span class="tab-count">{hardwareKeys.length}</span>
+            </button>
+          {/if}
+          {#if selectedRuns.length > 0}
+            <span class="tab-info">{metricsHeader}</span>
+          {/if}
+        </nav>
 
-            {#if metricKeys.length === 0}
+        {#if activeTab === "runs"}
+          <section class="tab-content">
+            <FilterBar
+              runs={allRuns}
+              {statusFilter}
+              {tagFilters}
+              {searchQuery}
+              onStatusChange={setStatusFilter}
+              onTagToggle={toggleTagFilter}
+              onTagRemove={removeTagFilter}
+              onSearchChange={setSearchQuery}
+              onClearAll={clearAllFilters}
+            />
+            <RunTable
+              runs={filteredRuns}
+              selectedIds={selectedRunIds}
+              primaryId={primaryRunId}
+              {colorOverrides}
+              onSelect={selectRun}
+              onToggle={toggleRunSelection}
+              onRename={renameRun}
+              onColorChange={setRunColor}
+              onTagFilter={handleTagFilter}
+              onDeleteRun={deleteRun}
+              onUpdateNotes={updateRunNotes}
+            />
+          </section>
+        {:else if activeTab === "metrics"}
+          <section class="tab-content">
+            {#if selectedRuns.length === 0}
+              <EmptyState
+                title="No runs selected"
+                message="Select a run from the Runs tab to view its metrics."
+              />
+            {:else if trainingKeys.length === 0}
               <EmptyState
                 title="No metrics"
-                message="This run has no logged metrics yet."
+                message="This run has no logged training metrics yet."
               />
             {:else}
               {#each [...groupedKeys] as [group, keys] (group)}
@@ -251,6 +300,17 @@
               {/each}
 
               <ConfigComparison runs={selectedRuns} />
+            {/if}
+          </section>
+        {:else if activeTab === "hardware"}
+          <section class="tab-content">
+            {#if selectedRuns.length === 0}
+              <EmptyState
+                title="No runs selected"
+                message="Select a run from the Runs tab to view hardware metrics."
+              />
+            {:else}
+              <HardwarePanel metricsByKey={hardwareByKey} />
             {/if}
           </section>
         {/if}
@@ -295,17 +355,60 @@
   .experiment-view {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
   }
-  .runs-section, .metrics-section {
+  .tabs {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab:hover:not(:disabled) {
+    color: var(--text);
+  }
+  .tab:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  .tab-count {
+    font-size: 0.7rem;
+    background: var(--bg-hover);
+    color: var(--text-dim);
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    font-weight: 400;
+  }
+  .tab.active .tab-count {
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--accent);
+  }
+  .tab-info {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .tab-content {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-  }
-  h2 {
-    font-size: 1rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
   }
   .metric-group {
     display: flex;

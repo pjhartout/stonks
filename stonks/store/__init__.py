@@ -9,7 +9,13 @@ from stonks.store.experiments import (
     list_experiments,
     list_experiments_with_run_counts,
 )
-from stonks.store.metrics import count_metrics, get_metric_keys, get_metrics, insert_metrics
+from stonks.store.metrics import (
+    count_metrics,
+    get_all_metrics,
+    get_metric_keys,
+    get_metrics,
+    insert_metrics,
+)
 from stonks.store.projects import create_project, list_projects
 from stonks.store.runs import (
     create_run,
@@ -30,6 +36,7 @@ from stonks.store.runs import (
 __all__ = [
     "count_metrics",
     "count_runs",
+    "get_all_metrics",
     "create_connection",
     "create_experiment",
     "create_project",

@@ -71,6 +71,33 @@ def get_metrics(
     return series
 
 
+def get_all_metrics(conn: sqlite3.Connection, run_id: str) -> dict[str, MetricSeries]:
+    """Get all metric time series for a run, grouped by key.
+
+    Args:
+        conn: Active database connection.
+        run_id: The run to query.
+
+    Returns:
+        Dict mapping metric key to MetricSeries.
+    """
+    rows = conn.execute(
+        "SELECT key, step, value, timestamp FROM metrics WHERE run_id = ? ORDER BY key, step",
+        (run_id,),
+    ).fetchall()
+
+    series_map: dict[str, MetricSeries] = {}
+    for row in rows:
+        key = row["key"]
+        if key not in series_map:
+            series_map[key] = MetricSeries(key=key)
+        s = series_map[key]
+        s.steps.append(row["step"])
+        s.values.append(row["value"])
+        s.timestamps.append(row["timestamp"])
+    return series_map
+
+
 def count_metrics(conn: sqlite3.Connection) -> int:
     """Count total number of metric data points.
 

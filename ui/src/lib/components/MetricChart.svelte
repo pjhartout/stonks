@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RunSeries } from "../types";
-  import { mergeRunSeries } from "../utils/merge";
+  import { mergeRunSeries, hasBands } from "../utils/merge";
   import uPlot from "uplot";
   import "uplot/dist/uPlot.min.css";
 
@@ -40,9 +40,29 @@
     return v.toPrecision(4);
   }
 
+  /**
+   * Build a mapping from data array index to the RunSeries it belongs to,
+   * plus whether it's the mean/min/max series.
+   */
+  function buildSeriesIndexMap(runSeries: RunSeries[]): Map<number, { run: RunSeries; role: "mean" | "min" | "max" }> {
+    const map = new Map<number, { run: RunSeries; role: "mean" | "min" | "max" }>();
+    let idx = 1; // 0 is x-axis
+    for (const r of runSeries) {
+      map.set(idx, { run: r, role: "mean" });
+      idx++;
+      if (r.data.values_min && r.data.values_max) {
+        map.set(idx, { run: r, role: "min" });
+        map.set(idx + 1, { run: r, role: "max" });
+        idx += 2;
+      }
+    }
+    return map;
+  }
+
   function cursorTooltipPlugin(runSeries: RunSeries[]): uPlot.Plugin {
     let tooltip: HTMLDivElement;
     let over: HTMLElement;
+    const indexMap = buildSeriesIndexMap(runSeries);
 
     return {
       hooks: {
@@ -71,13 +91,29 @@
           const i = idx as number;
           const step = u.data[0][i];
           let html = `<div class="tt-step">Step ${step}</div>`;
+
+          // Show one tooltip row per run (mean value, plus spread if available)
           for (let s = 1; s < u.data.length; s++) {
+            const info = indexMap.get(s);
+            if (!info || info.role !== "mean") continue;
             const val = u.data[s][i] ?? NaN;
             if (Number.isNaN(val)) continue;
-            const run = runSeries[s - 1];
-            const color = run?.color ?? "#888";
-            const name = run?.runName ?? `Run ${s}`;
-            html += `<div class="tt-row"><span class="tt-swatch" style="background:${escapeHtml(color)}"></span>${escapeHtml(name)}: ${fmtVal(val)}</div>`;
+            const color = info.run.color;
+            const name = info.run.runName;
+
+            // Check if there's a min/max for this run
+            const minInfo = indexMap.get(s + 1);
+            const maxInfo = indexMap.get(s + 2);
+            let spread = "";
+            if (minInfo?.role === "min" && maxInfo?.role === "max") {
+              const minVal = u.data[s + 1][i] ?? NaN;
+              const maxVal = u.data[s + 2][i] ?? NaN;
+              if (!Number.isNaN(minVal) && !Number.isNaN(maxVal)) {
+                spread = ` <span class="tt-spread">[${fmtVal(minVal)} \u2013 ${fmtVal(maxVal)}]</span>`;
+              }
+            }
+
+            html += `<div class="tt-row"><span class="tt-swatch" style="background:${escapeHtml(color)}"></span>${escapeHtml(name)}: ${fmtVal(val)}${spread}</div>`;
           }
           tooltip.innerHTML = html;
 
@@ -174,18 +210,58 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
+  function hexToRgba(hex: string, alpha: number): string {
+    const c = hex.replace("#", "");
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
   function createChart(el: HTMLDivElement, runSeries: RunSeries[]) {
     const data = mergeRunSeries(runSeries);
+    const bands = hasBands(runSeries);
 
-    const seriesConfig: uPlot.Series[] = [
-      { label: "Step" },
-      ...runSeries.map((r) => ({
+    const seriesConfig: uPlot.Series[] = [{ label: "Step" }];
+    const uBands: uPlot.Band[] = [];
+
+    // Track which data array index we're at
+    let dataIdx = 1;
+    for (const r of runSeries) {
+      const meanIdx = dataIdx;
+      // Mean line
+      seriesConfig.push({
         label: r.runName,
         stroke: r.color,
         width: 1.5,
-        fill: undefined,
-      })),
-    ];
+      });
+      dataIdx++;
+
+      if (r.data.values_min && r.data.values_max) {
+        const minIdx = dataIdx;
+        const maxIdx = dataIdx + 1;
+        // Min series (hidden line, used only for band fill)
+        seriesConfig.push({
+          show: true,
+          width: 0,
+          stroke: "transparent",
+          points: { show: false },
+        } as uPlot.Series);
+        // Max series (hidden line, used only for band fill)
+        seriesConfig.push({
+          show: true,
+          width: 0,
+          stroke: "transparent",
+          points: { show: false },
+        } as uPlot.Series);
+        // Band between min and max
+        uBands.push({
+          series: [maxIdx, minIdx],
+          fill: hexToRgba(r.color, 0.15),
+        });
+        dataIdx += 2;
+      }
+    }
 
     const axisStroke = readCssVar("--chart-axis");
     const gridStroke = readCssVar("--chart-grid");
@@ -201,6 +277,7 @@
       scales: {
         x: { time: false },
       },
+      bands: uBands.length > 0 ? uBands : undefined,
       axes: [
         {
           stroke: axisStroke,
@@ -334,6 +411,10 @@
   }
   .chart-container :global(.u-legend .u-series) {
     padding: 1px 6px;
+  }
+  .chart-container :global(.tt-spread) {
+    color: var(--text-dim, #6c7086);
+    font-size: 0.65rem;
   }
 
   /* Selection range labels */

@@ -1,4 +1,4 @@
-import { deleteExperiment as apiDeleteExperiment, deleteRun as apiDeleteRun, fetchExperiments, fetchMetricKeys, fetchMetrics, fetchRuns, patchRun } from "../api/client";
+import { deleteExperiment as apiDeleteExperiment, deleteRun as apiDeleteRun, fetchAllMetrics, fetchExperiments, fetchRuns, patchRun } from "../api/client";
 import { connectSSE } from "../api/sse";
 import type { Experiment, MetricSeries, Run, StatusFilter } from "../types";
 import { MAX_SELECTED_RUNS } from "../utils/colors";
@@ -234,18 +234,13 @@ function recomputeMetricKeys() {
 
 async function loadMetricsForRun(runId: string) {
   try {
+    loading = true;
     const downsample = Math.max(200, Math.floor(1000 / Math.max(selectedRunIds.size, 1)));
-    const runKeys = await fetchMetricKeys(runId);
-    const fetched = new Map<string, MetricSeries>();
-    const promises = runKeys.map(async (key) => {
-      const series = await fetchMetrics(runId, key, downsample);
-      fetched.set(key, series);
-    });
-    await Promise.all(promises);
+    const allSeries = await fetchAllMetrics(runId, downsample);
 
-    // Merge this run's data into the nested map (data first, then keys)
+    // Merge this run's data into the nested map
     const updated = new Map(metricData);
-    for (const [key, series] of fetched) {
+    for (const [key, series] of Object.entries(allSeries)) {
       const existing = updated.get(key) ?? new Map();
       existing.set(runId, series);
       updated.set(key, existing);
@@ -255,6 +250,8 @@ async function loadMetricsForRun(runId: string) {
     recomputeMetricKeys();
   } catch (e) {
     error = e instanceof Error ? e.message : "Failed to load metrics";
+  } finally {
+    loading = false;
   }
 }
 
