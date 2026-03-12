@@ -8,11 +8,11 @@ from stonks.logging_config import _resolve_stdout_level
 
 
 class TestResolveStdoutLevel:
-    def test_default_is_info(self):
-        """Without env var, default stdout level is INFO."""
+    def test_default_is_warning(self):
+        """Without env var, default stdout level is WARNING."""
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("STONKS_LOG_LEVEL", None)
-            assert _resolve_stdout_level() == "INFO"
+            assert _resolve_stdout_level() == "WARNING"
 
     def test_debug_level(self):
         """STONKS_LOG_LEVEL=DEBUG returns DEBUG."""
@@ -39,15 +39,15 @@ class TestResolveStdoutLevel:
         with patch.dict(os.environ, {"STONKS_LOG_LEVEL": "  INFO  "}):
             assert _resolve_stdout_level() == "INFO"
 
-    def test_invalid_level_falls_back_to_info(self):
-        """Invalid log level falls back to INFO."""
+    def test_invalid_level_falls_back_to_warning(self):
+        """Invalid log level falls back to WARNING."""
         with patch.dict(os.environ, {"STONKS_LOG_LEVEL": "TRACE"}):
-            assert _resolve_stdout_level() == "INFO"
+            assert _resolve_stdout_level() == "WARNING"
 
-    def test_empty_string_falls_back_to_info(self):
-        """Empty string falls back to INFO."""
+    def test_empty_string_falls_back_to_warning(self):
+        """Empty string falls back to WARNING."""
         with patch.dict(os.environ, {"STONKS_LOG_LEVEL": ""}):
-            assert _resolve_stdout_level() == "INFO"
+            assert _resolve_stdout_level() == "WARNING"
 
 
 class TestSetupLogging:
