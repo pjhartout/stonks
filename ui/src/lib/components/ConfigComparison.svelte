@@ -14,6 +14,16 @@
     }
     return Array.from(keys).sort();
   });
+
+  function formatValue(v: unknown): string {
+    if (v === null || v === undefined) return "-";
+    if (typeof v === "object") return JSON.stringify(v, null, 2);
+    return String(v);
+  }
+
+  function isComplex(v: unknown): boolean {
+    return v !== null && v !== undefined && typeof v === "object";
+  }
 </script>
 
 <div class="config-table">
@@ -36,7 +46,13 @@
             <tr>
               <td class="key">{key}</td>
               {#each runs as run (run.id)}
-                <td class="val">{run.config?.[key] ?? "-"}</td>
+                <td class="val" class:val-complex={isComplex(run.config?.[key])}>
+                  {#if isComplex(run.config?.[key])}
+                    <pre class="val-pre">{formatValue(run.config?.[key])}</pre>
+                  {:else}
+                    {formatValue(run.config?.[key])}
+                  {/if}
+                </td>
               {/each}
             </tr>
           {/each}
@@ -90,6 +106,18 @@
   .val {
     font-family: var(--font-mono);
     color: var(--text);
+  }
+  .val-complex {
+    white-space: pre;
+  }
+  .val-pre {
+    margin: 0;
+    font-family: inherit;
+    font-size: inherit;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    line-height: 1.4;
   }
   .run-col {
     font-family: var(--font-mono);

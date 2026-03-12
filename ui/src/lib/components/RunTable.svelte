@@ -86,10 +86,16 @@
     return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
   }
 
+  function formatValueCompact(v: unknown): string {
+    if (v === null || v === undefined) return "null";
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  }
+
   function configSummary(config: Record<string, unknown> | null): string {
     if (!config) return "";
     const entries = Object.entries(config).slice(0, 3);
-    const parts = entries.map(([k, v]) => `${k}=${v}`);
+    const parts = entries.map(([k, v]) => `${k}=${formatValueCompact(v)}`);
     if (Object.keys(config).length > 3) parts.push("...");
     return parts.join(", ");
   }
