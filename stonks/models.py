@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -69,7 +70,7 @@ class MetricSeries:
 class _ConfigEncoder(json.JSONEncoder):
     """JSON encoder that converts framework containers to plain Python types."""
 
-    def default(self, o: object) -> object:
+    def default(self, o: Any) -> Any:
         # OmegaConf ListConfig/DictConfig
         if type(o).__name__ == "ListConfig":
             return list(o)

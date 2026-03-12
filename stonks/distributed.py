@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import os
+from typing import Any
+
+_torch_dist: Any = None
+_HAS_TORCH_DIST = False
 
 try:
-    import torch.distributed as _torch_dist
+    import torch.distributed
 
+    _torch_dist = torch.distributed
     _HAS_TORCH_DIST = True
 except ImportError:
-    _torch_dist = None
-    _HAS_TORCH_DIST = False
+    pass
 
 
 def _env_int(key: str, default: int) -> int:
