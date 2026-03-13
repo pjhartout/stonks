@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 import warnings
+from collections import defaultdict
 from typing import Any, Literal
 
 from loguru import logger as log
@@ -229,6 +231,37 @@ class StonksLogger(Logger):
             log.info(f"StonksLogger finalized with status '{mapped_status}'")
 
 
+def _aggregate_across_ranks(
+    gathered: list[dict[str, float] | None],
+) -> dict[str, float]:
+    """Compute mean and std of metrics across ranks.
+
+    Args:
+        gathered: List of metric dicts, one per rank (may contain None).
+
+    Returns:
+        Dict with ``avg/<key>`` and ``std/<key>`` entries for each metric key.
+    """
+    values_by_key: dict[str, list[float]] = defaultdict(list)
+    for metrics in gathered:
+        if metrics:
+            for k, v in metrics.items():
+                values_by_key[k].append(v)
+
+    aggregated: dict[str, float] = {}
+    for key, vals in values_by_key.items():
+        n = len(vals)
+        mean = sum(vals) / n
+        aggregated[f"avg/{key}"] = mean
+        if n > 1:
+            variance = sum((v - mean) ** 2 for v in vals) / (n - 1)
+            aggregated[f"std/{key}"] = math.sqrt(variance)
+        else:
+            aggregated[f"std/{key}"] = 0.0
+
+    return aggregated
+
+
 class StonksDistributedCallback(Callback):
     """Lightning Callback for multi-rank metric and hardware gathering.
 
@@ -329,7 +362,11 @@ class StonksDistributedCallback(Callback):
             self._gather_and_log_hardware(trainer, step)
 
     def _gather_and_log_metrics(self, trainer: Any, step: int) -> None:
-        """Gather per-rank metrics from all processes and log on rank 0.
+        """Gather metrics from all ranks, compute mean/std, and log on rank 0.
+
+        Instead of logging per-rank values (which scales as O(world_size)),
+        this computes the mean and standard deviation across ranks for each
+        metric key, reducing storage to O(1) regardless of world size.
 
         Args:
             trainer: The Lightning Trainer.
@@ -354,16 +391,15 @@ class StonksDistributedCallback(Callback):
         if rank == 0:
             stonks_logger = self._get_stonks_logger(trainer)
             if stonks_logger is not None:
-                per_rank_metrics: dict[str, float] = {}
-                for r, metrics in enumerate(gathered):
-                    if metrics:
-                        for k, v in metrics.items():
-                            per_rank_metrics[f"rank_{r}/{k}"] = v
-                if per_rank_metrics:
-                    stonks_logger.log_metrics(per_rank_metrics, step=step)
+                aggregated = _aggregate_across_ranks(gathered)
+                if aggregated:
+                    stonks_logger.log_metrics(aggregated, step=step)
 
     def _gather_and_log_hardware(self, trainer: Any, step: int) -> None:
-        """Gather hardware snapshots from all ranks and log on rank 0.
+        """Gather hardware snapshots from all ranks, aggregate, and log on rank 0.
+
+        Computes mean and standard deviation of hardware metrics across ranks
+        instead of logging per-rank values.
 
         Args:
             trainer: The Lightning Trainer.
@@ -380,13 +416,9 @@ class StonksDistributedCallback(Callback):
         if rank == 0:
             stonks_logger = self._get_stonks_logger(trainer)
             if stonks_logger is not None:
-                hw_metrics: dict[str, float] = {}
-                for r, metrics in enumerate(gathered):
-                    if metrics:
-                        for k, v in metrics.items():
-                            hw_metrics[f"rank_{r}/{k}"] = v
-                if hw_metrics:
-                    stonks_logger.log_metrics(hw_metrics, step=step)
+                aggregated = _aggregate_across_ranks(gathered)
+                if aggregated:
+                    stonks_logger.log_metrics(aggregated, step=step)
 
     def _get_stonks_logger(self, trainer: Any) -> StonksLogger | None:
         """Find the StonksLogger in the trainer's loggers.

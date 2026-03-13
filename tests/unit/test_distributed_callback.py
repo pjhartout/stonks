@@ -1,10 +1,11 @@
 """Tests for StonksDistributedCallback."""
 
+import math
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from stonks.lightning import StonksDistributedCallback, StonksLogger
+from stonks.lightning import StonksDistributedCallback, StonksLogger, _aggregate_across_ranks
 
 
 @pytest.fixture
@@ -31,6 +32,44 @@ def mock_trainer(mock_stonks_logger):
     trainer.global_step = 0
     trainer.callback_metrics = {"train_loss": MagicMock(item=lambda: 0.5)}
     return trainer
+
+
+class TestAggregateAcrossRanks:
+    def test_computes_mean_and_std(self):
+        gathered = [
+            {"loss": 1.0, "acc": 0.8},
+            {"loss": 3.0, "acc": 0.6},
+        ]
+        result = _aggregate_across_ranks(gathered)
+        assert result["avg/loss"] == pytest.approx(2.0)
+        assert result["avg/acc"] == pytest.approx(0.7)
+        assert result["std/loss"] == pytest.approx(math.sqrt(2.0))
+        assert result["std/acc"] == pytest.approx(math.sqrt(0.02))
+
+    def test_single_rank(self):
+        gathered = [{"loss": 5.0}]
+        result = _aggregate_across_ranks(gathered)
+        assert result["avg/loss"] == pytest.approx(5.0)
+        assert result["std/loss"] == 0.0
+
+    def test_skips_none_entries(self):
+        gathered = [None, {"loss": 4.0}, None, {"loss": 6.0}]
+        result = _aggregate_across_ranks(gathered)
+        assert result["avg/loss"] == pytest.approx(5.0)
+
+    def test_empty_gathered(self):
+        assert _aggregate_across_ranks([]) == {}
+        assert _aggregate_across_ranks([None, None]) == {}
+
+    def test_missing_keys_on_some_ranks(self):
+        gathered = [
+            {"loss": 1.0, "acc": 0.9},
+            {"loss": 3.0},
+        ]
+        result = _aggregate_across_ranks(gathered)
+        assert result["avg/loss"] == pytest.approx(2.0)
+        assert result["avg/acc"] == pytest.approx(0.9)
+        assert result["std/acc"] == 0.0
 
 
 class TestCallbackInit:
