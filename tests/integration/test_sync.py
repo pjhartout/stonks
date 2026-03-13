@@ -90,7 +90,7 @@ class TestFullMergeWorkflow:
         # Second merge
         stats2 = merge_remote_db(remote_path, target_conn, "remote")
         assert stats2.updated_runs == 1
-        assert stats2.metrics_inserted == 2  # Replaced: 2 total metrics now
+        assert stats2.metrics_inserted == 1  # Incremental: only new step=1 metric
 
         # Verify final state
         row = target_conn.execute("SELECT * FROM runs WHERE id = ?", (run.id,)).fetchone()

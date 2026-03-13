@@ -356,9 +356,10 @@ def _update_existing_run(
     target_experiment_id: str,
     stats: MergeStats,
 ) -> None:
-    """Update an existing run and replace its metrics.
+    """Update an existing run and incrementally insert new metrics.
 
-    Remote wins for all fields.
+    Remote wins for all run fields. Only metrics newer than the local
+    maximum step per key are inserted, avoiding a full delete+reinsert.
 
     Args:
         conn: Connection with source DB attached.
@@ -391,9 +392,9 @@ def _update_existing_run(
         ),
     )
 
-    # Delete old metrics and re-insert from remote
-    conn.execute("DELETE FROM main.metrics WHERE run_id = ?", (src_run_id,))
-    metrics_count = _copy_metrics_for_run(conn, src_run_id)
+    # Incremental metric insert: only copy metrics with step greater than
+    # the local max for each key, avoiding a full delete+reinsert.
+    metrics_count = _copy_new_metrics_for_run(conn, src_run_id)
 
     stats.updated_runs += 1
     stats.metrics_inserted += metrics_count
@@ -419,3 +420,65 @@ def _copy_metrics_for_run(conn: sqlite3.Connection, run_id: str) -> int:
         "SELECT COUNT(*) FROM source.metrics WHERE run_id = ?", (run_id,)
     ).fetchone()[0]
     return count
+
+
+def _copy_new_metrics_for_run(conn: sqlite3.Connection, run_id: str) -> int:
+    """Incrementally copy only new metrics for a run from source to target.
+
+    For each metric key, only inserts rows whose step is greater than the
+    local maximum step. This avoids deleting and re-inserting all metrics
+    on every sync cycle.
+
+    Args:
+        conn: Connection with source DB attached.
+        run_id: The run ID to copy metrics for.
+
+    Returns:
+        Number of new metrics inserted.
+    """
+    # Get the max step per key already in the target
+    local_maxes = conn.execute(
+        "SELECT key, MAX(step) FROM main.metrics WHERE run_id = ? GROUP BY key",
+        (run_id,),
+    ).fetchall()
+    max_step_by_key: dict[str, int] = {row[0]: row[1] for row in local_maxes}
+
+    if not max_step_by_key:
+        # No local metrics yet — copy everything
+        return _copy_metrics_for_run(conn, run_id)
+
+    # Insert source metrics where step > local max for that key,
+    # plus any keys that don't exist locally yet
+    total = 0
+    source_keys = conn.execute(
+        "SELECT DISTINCT key FROM source.metrics WHERE run_id = ?",
+        (run_id,),
+    ).fetchall()
+
+    for (key,) in source_keys:
+        local_max = max_step_by_key.get(key)
+        if local_max is not None:
+            conn.execute(
+                "INSERT INTO main.metrics (run_id, key, value, step, timestamp) "
+                "SELECT run_id, key, value, step, timestamp "
+                "FROM source.metrics WHERE run_id = ? AND key = ? AND step > ?",
+                (run_id, key, local_max),
+            )
+            count = conn.execute(
+                "SELECT COUNT(*) FROM source.metrics WHERE run_id = ? AND key = ? AND step > ?",
+                (run_id, key, local_max),
+            ).fetchone()[0]
+        else:
+            conn.execute(
+                "INSERT INTO main.metrics (run_id, key, value, step, timestamp) "
+                "SELECT run_id, key, value, step, timestamp "
+                "FROM source.metrics WHERE run_id = ? AND key = ?",
+                (run_id, key),
+            )
+            count = conn.execute(
+                "SELECT COUNT(*) FROM source.metrics WHERE run_id = ? AND key = ?",
+                (run_id, key),
+            ).fetchone()[0]
+        total += count
+
+    return total

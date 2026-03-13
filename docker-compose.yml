@@ -18,6 +18,7 @@ services:
       - ${STONKS_CONFIG:-~/.stonks/remotes.toml}:/root/.stonks/remotes.toml:ro
     environment:
       - STONKS_DB=/data/stonks.db
+      - STONKS_LOG_LEVEL=INFO
     depends_on:
       - dashboard
 

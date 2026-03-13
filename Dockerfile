@@ -33,6 +33,7 @@ COPY --from=ui-build /app/stonks/server/static/ stonks/server/static/
 RUN uv sync --frozen --extra server --no-dev
 
 ENV STONKS_DB=/data/stonks.db
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 ENTRYPOINT ["uv", "run", "stonks"]

@@ -173,9 +173,10 @@ class TestMergeUpdatedRuns:
         stats1 = merge_remote_db(src_path, tgt_conn, "test-remote")
         assert stats1.new_runs == 1
 
-        # Complete the run on the source and add more metrics
+        # Complete the run on the source and add more metrics (steps 2, 3)
         finish_run(src_conn, run.id, "completed")
-        _add_metrics(src_conn, run.id, "loss", [0.5, 0.3])
+        now = time.time()
+        insert_metrics(src_conn, run.id, [("loss", 0.5, 2, now), ("loss", 0.3, 3, now + 1)])
 
         # Second merge: run is now "completed" with more metrics
         stats2 = merge_remote_db(src_path, tgt_conn, "test-remote")
@@ -187,7 +188,7 @@ class TestMergeUpdatedRuns:
         assert row["status"] == "completed"
         assert row["ended_at"] is not None
 
-        # Verify metrics replaced (should be 4, not 6)
+        # Verify incremental merge added only new metrics (2 original + 2 new = 4)
         count = tgt_conn.execute(
             "SELECT COUNT(*) as cnt FROM metrics WHERE run_id = ?", (run.id,)
         ).fetchone()["cnt"]

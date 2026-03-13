@@ -113,8 +113,59 @@ def _discover_remote_dbs(remote: RemoteConfig) -> list[str]:
         return []
 
 
+def _checkpoint_remote_wal(remote: RemoteConfig, remote_path: str) -> None:
+    """Flush the WAL journal into the main database file on the remote.
+
+    SQLite WAL mode writes to a separate -wal file. Without checkpointing,
+    rsync only copies the main .db file and misses uncommitted WAL data.
+
+    Uses PASSIVE mode so the checkpoint never blocks on active writers
+    (e.g. a training script logging metrics). It flushes whatever WAL
+    frames it can; the next sync cycle catches up with the rest.
+
+    Args:
+        remote: Remote configuration.
+        remote_path: Absolute path to the database on the remote.
+    """
+    cmd = _build_ssh_command(remote)[:-1]  # Remove the trailing host arg
+    # Pass the full sqlite3 command as a single string so the remote shell
+    # doesn't interpret parentheses in the PRAGMA as subshell syntax.
+    cmd.extend(
+        [
+            remote.host,
+            f"sqlite3 '{remote_path}' 'PRAGMA wal_checkpoint(PASSIVE);'",
+        ]
+    )
+    logger.debug(f"Checkpointing WAL on '{remote.name}': {remote_path}")
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            logger.warning(
+                f"WAL checkpoint failed for '{remote.name}' ({remote_path}): "
+                f"{result.stderr.strip()}"
+            )
+    except subprocess.TimeoutExpired:
+        logger.warning(f"WAL checkpoint timed out for '{remote.name}' ({remote_path})")
+    except FileNotFoundError:
+        logger.warning("ssh not found for WAL checkpoint")
+
+
+def _format_bytes(n: float) -> str:
+    """Format a byte count as a human-readable string."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(n) < 1024:
+            return f"{n:.1f}{unit}"
+        n /= 1024
+    return f"{n:.1f}TB"
+
+
 def _rsync_file(remote: RemoteConfig, remote_path: str, local_path: Path) -> bool:
-    """Rsync a single file from a remote.
+    """Rsync a single file from a remote with progress logging.
+
+    Checkpoints the WAL journal before transfer to ensure all written
+    data is flushed into the main database file. Logs transfer progress
+    every 10 seconds.
 
     Args:
         remote: Remote configuration.
@@ -126,23 +177,60 @@ def _rsync_file(remote: RemoteConfig, remote_path: str, local_path: Path) -> boo
     """
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
+    _checkpoint_remote_wal(remote, remote_path)
+
     cmd = [
         "rsync",
         "-az",
-        "--whole-file",
+        "--info=progress2",
         "-e",
         _build_ssh_opts(remote),
         f"{remote.host}:{remote_path}",
         str(local_path),
     ]
 
+    short_path = Path(remote_path).name
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            logger.warning(
-                f"rsync failed for '{remote.name}' ({remote_path}): {result.stderr.strip()}"
-            )
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        last_log_time = time.monotonic()
+        last_progress = ""
+
+        assert proc.stdout is not None
+        # rsync --info=progress2 writes progress lines with \r to stdout
+        buf = ""
+        while True:
+            chunk = proc.stdout.read(256)
+            if not chunk:
+                break
+            buf += chunk
+            # Extract the latest progress line (rsync uses \r for updates)
+            lines = buf.replace("\r", "\n").split("\n")
+            for line in lines:
+                stripped = line.strip()
+                if stripped and "%" in stripped:
+                    last_progress = stripped
+            buf = lines[-1]
+
+            now = time.monotonic()
+            if now - last_log_time >= 10 and last_progress:
+                logger.info(f"rsync '{remote.name}' {short_path}: {last_progress}")
+                last_log_time = now
+
+        proc.wait()
+        if proc.returncode != 0:
+            stderr = proc.stderr.read() if proc.stderr else ""
+            logger.warning(f"rsync failed for '{remote.name}' ({remote_path}): {stderr.strip()}")
             return False
+
+        # Log final size
+        if local_path.exists():
+            size = _format_bytes(local_path.stat().st_size)
+            logger.info(f"rsync '{remote.name}' {short_path}: done ({size})")
         return True
     except FileNotFoundError:
         logger.error("rsync not found. Install rsync to use sync feature.")
@@ -177,12 +265,13 @@ def pull_remote_scan(remote: RemoteConfig) -> list[Path]:
 
     pulled: list[Path] = []
     for i, remote_path in enumerate(remote_paths):
+        logger.info(f"Pulling '{remote.name}' [{i + 1}/{len(remote_paths)}]: {remote_path}")
         # Stage each DB in a unique subfolder to avoid collisions
         local_path = remote.staging_dir / f"db_{i}" / "stonks.db"
         if _rsync_file(remote, remote_path, local_path):
             pulled.append(local_path)
 
-    logger.debug(f"Pulled {len(pulled)}/{len(remote_paths)} databases from '{remote.name}'")
+    logger.info(f"Pulled {len(pulled)}/{len(remote_paths)} databases from '{remote.name}'")
     return pulled
 
 
@@ -243,6 +332,8 @@ def sync_remote(
             pulled_paths = pull_remote_scan(remote)
             for i, path in enumerate(pulled_paths):
                 label = f"{remote.name}[{i}]"
+                size = _format_bytes(path.stat().st_size) if path.exists() else "?"
+                logger.info(f"Merging '{label}' [{i + 1}/{len(pulled_paths)}] ({size})")
                 stats = _merge_single_db(path, target_conn, remote.name, label)
                 if stats is not None:
                     results.append(stats)
@@ -369,16 +460,19 @@ def run_sync_daemon(
                 time.sleep(interval)
                 continue
 
+            cycle_start = time.monotonic()
+            logger.info(f"Sync cycle starting ({len(remotes)} remote(s))")
             results = sync_all(remotes, target_db_path)
-            if results:
-                total_new = sum(s.new_runs for s in results)
-                total_updated = sum(s.updated_runs for s in results)
-                total_metrics = sum(s.metrics_inserted for s in results)
-                if total_new > 0 or total_updated > 0:
-                    logger.info(
-                        f"Sync cycle: {total_new} new runs, "
-                        f"{total_updated} updated, {total_metrics} metrics"
-                    )
+            elapsed_s = time.monotonic() - cycle_start
+            total_new = sum(s.new_runs for s in results)
+            total_updated = sum(s.updated_runs for s in results)
+            total_skipped = sum(s.skipped_runs for s in results)
+            total_metrics = sum(s.metrics_inserted for s in results)
+            logger.info(
+                f"Sync cycle done in {elapsed_s:.1f}s: "
+                f"{total_new} new, {total_updated} updated, "
+                f"{total_skipped} skipped runs, {total_metrics} metrics"
+            )
 
             # Sleep in small increments to respond to signals faster
             elapsed = 0.0
