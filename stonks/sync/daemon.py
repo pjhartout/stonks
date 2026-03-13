@@ -18,6 +18,9 @@ from stonks.sync.merge import MergeError, MergeStats, check_integrity, merge_rem
 DEFAULT_INTERVAL = 10
 LOCK_FILE = Path.home() / ".stonks" / "sync.lock"
 
+# Type alias for fingerprint cache: path -> (size_bytes, mtime)
+FileFingerprints = dict[str, tuple[int, float]]
+
 
 class SyncError(StonksError):
     """Error during sync operation."""
@@ -160,6 +163,22 @@ def _format_bytes(n: float) -> str:
     return f"{n:.1f}TB"
 
 
+def _get_fingerprint(path: Path) -> tuple[int, float] | None:
+    """Get the (size, mtime) fingerprint for a file.
+
+    Args:
+        path: Path to the file.
+
+    Returns:
+        Tuple of (size_bytes, mtime) or None if the file doesn't exist.
+    """
+    try:
+        st = path.stat()
+        return (st.st_size, st.st_mtime)
+    except OSError:
+        return None
+
+
 def _rsync_file(remote: RemoteConfig, remote_path: str, local_path: Path) -> bool:
     """Rsync a single file from a remote with progress logging.
 
@@ -280,28 +299,45 @@ def _merge_single_db(
     target_conn,
     remote_name: str,
     label: str,
+    fingerprints: FileFingerprints | None = None,
 ) -> MergeStats | None:
     """Merge a single source DB into the target, with integrity check.
+
+    Skips the expensive integrity check and merge if the file's size and
+    mtime match the cached fingerprint from the previous successful merge.
 
     Args:
         source_path: Path to the source database.
         target_conn: Target database connection.
         remote_name: Name of the remote for stats.
         label: Label for logging.
+        fingerprints: Optional cache of file fingerprints from previous merges.
 
     Returns:
         MergeStats if successful, None otherwise.
     """
+    path_key = str(source_path)
+    current_fp = _get_fingerprint(source_path)
+
+    if fingerprints is not None and current_fp is not None:
+        cached_fp = fingerprints.get(path_key)
+        if cached_fp == current_fp:
+            logger.debug(f"Skipping '{label}': file unchanged ({_format_bytes(current_fp[0])})")
+            return MergeStats(remote_name=remote_name)
+
     if not check_integrity(source_path):
         logger.warning(f"Integrity check failed for '{label}', skipping")
         return None
 
     try:
-        return merge_remote_db(
+        stats = merge_remote_db(
             source_path=source_path,
             target_conn=target_conn,
             remote_name=remote_name,
         )
+        if fingerprints is not None and current_fp is not None:
+            fingerprints[path_key] = current_fp
+        return stats
     except MergeError as e:
         logger.error(f"Merge failed for '{label}': {e}")
         return None
@@ -310,6 +346,7 @@ def _merge_single_db(
 def sync_remote(
     remote: RemoteConfig,
     target_db_path: Path,
+    fingerprints: FileFingerprints | None = None,
 ) -> list[MergeStats]:
     """Pull and merge a single remote.
 
@@ -318,6 +355,7 @@ def sync_remote(
     Args:
         remote: Remote configuration.
         target_db_path: Path to the local target database.
+        fingerprints: Optional cache of file fingerprints for skipping unchanged DBs.
 
     Returns:
         List of MergeStats for successful merges.
@@ -334,7 +372,7 @@ def sync_remote(
                 label = f"{remote.name}[{i}]"
                 size = _format_bytes(path.stat().st_size) if path.exists() else "?"
                 logger.info(f"Merging '{label}' [{i + 1}/{len(pulled_paths)}] ({size})")
-                stats = _merge_single_db(path, target_conn, remote.name, label)
+                stats = _merge_single_db(path, target_conn, remote.name, label, fingerprints)
                 if stats is not None:
                     results.append(stats)
         else:
@@ -343,7 +381,9 @@ def sync_remote(
             if not remote.staging_path.exists():
                 logger.warning(f"No database found after pull for '{remote.name}'")
                 return results
-            stats = _merge_single_db(remote.staging_path, target_conn, remote.name, remote.name)
+            stats = _merge_single_db(
+                remote.staging_path, target_conn, remote.name, remote.name, fingerprints
+            )
             if stats is not None:
                 results.append(stats)
     finally:
@@ -355,19 +395,21 @@ def sync_remote(
 def sync_all(
     remotes: list[RemoteConfig],
     target_db_path: Path,
+    fingerprints: FileFingerprints | None = None,
 ) -> list[MergeStats]:
     """Sync all remotes in sequence.
 
     Args:
         remotes: List of remote configurations.
         target_db_path: Path to the local target database.
+        fingerprints: Optional cache of file fingerprints for skipping unchanged DBs.
 
     Returns:
         List of MergeStats for successful syncs.
     """
     results: list[MergeStats] = []
     for remote in remotes:
-        results.extend(sync_remote(remote, target_db_path))
+        results.extend(sync_remote(remote, target_db_path, fingerprints))
     return results
 
 
@@ -437,6 +479,7 @@ def run_sync_daemon(
     signal.signal(signal.SIGTERM, _handle_signal)
 
     last_valid_remotes: list[RemoteConfig] | None = None
+    fingerprints: FileFingerprints = {}
 
     logger.info(f"Sync daemon started (interval={interval}s, target={target_db_path})")
 
@@ -462,7 +505,7 @@ def run_sync_daemon(
 
             cycle_start = time.monotonic()
             logger.info(f"Sync cycle starting ({len(remotes)} remote(s))")
-            results = sync_all(remotes, target_db_path)
+            results = sync_all(remotes, target_db_path, fingerprints)
             elapsed_s = time.monotonic() - cycle_start
             total_new = sum(s.new_runs for s in results)
             total_updated = sum(s.updated_runs for s in results)

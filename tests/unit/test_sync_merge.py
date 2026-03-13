@@ -1,5 +1,6 @@
 """Tests for sync merge logic."""
 
+import os
 import time
 
 import pytest
@@ -9,6 +10,7 @@ from stonks.store.experiments import create_experiment
 from stonks.store.metrics import insert_metrics
 from stonks.store.projects import create_project
 from stonks.store.runs import create_run, finish_run
+from stonks.sync.daemon import _merge_single_db
 from stonks.sync.merge import MergeError, check_integrity, merge_remote_db
 
 
@@ -339,3 +341,83 @@ class TestMergeEdgeCases:
         assert row["notes"] == "First attempt with new architecture"
         assert "baseline" in row["tags"]
         assert "lr" in row["config"]
+
+
+class TestFingerprintSkip:
+    """Tests for file fingerprint-based skip logic in _merge_single_db."""
+
+    def test_second_merge_skipped_when_unchanged(self, source_db, target_db):
+        """Second merge of unchanged file should skip via fingerprint cache."""
+        src_conn, src_path = source_db
+        tgt_conn, _ = target_db
+
+        exp = create_experiment(src_conn, "exp")
+        run = create_run(src_conn, exp.id, name="run-1")
+        _add_metrics(src_conn, run.id, "loss", [0.9, 0.7])
+
+        fingerprints = {}
+
+        # First merge: should actually merge
+        stats1 = _merge_single_db(src_path, tgt_conn, "test-remote", "label", fingerprints)
+        assert stats1 is not None
+        assert stats1.new_runs == 1
+        assert str(src_path) in fingerprints
+
+        # Second merge: file unchanged, should skip
+        stats2 = _merge_single_db(src_path, tgt_conn, "test-remote", "label", fingerprints)
+        assert stats2 is not None
+        assert stats2.new_runs == 0
+        assert stats2.updated_runs == 0
+        assert stats2.skipped_runs == 0
+        assert stats2.metrics_inserted == 0
+
+    def test_merge_runs_after_file_modified(self, source_db, target_db):
+        """Merge should run again if the file is modified after caching."""
+        src_conn, src_path = source_db
+        tgt_conn, _ = target_db
+
+        exp = create_experiment(src_conn, "exp")
+        run = create_run(src_conn, exp.id, name="run-1")
+        _add_metrics(src_conn, run.id, "loss", [0.9])
+
+        fingerprints = {}
+        _merge_single_db(src_path, tgt_conn, "test-remote", "label", fingerprints)
+
+        # Modify the source DB and force mtime change
+        now = time.time()
+        insert_metrics(src_conn, run.id, [("loss", 0.7, 1, now)])
+        finish_run(src_conn, run.id, "completed")
+        os.utime(src_path, (now + 1, now + 1))
+
+        # Should re-merge because fingerprint changed
+        stats2 = _merge_single_db(src_path, tgt_conn, "test-remote", "label", fingerprints)
+        assert stats2 is not None
+        assert stats2.updated_runs == 1
+
+    def test_no_fingerprint_cache_always_merges(self, source_db, target_db):
+        """Without fingerprint cache (None), every call should merge."""
+        src_conn, src_path = source_db
+        tgt_conn, _ = target_db
+
+        exp = create_experiment(src_conn, "exp")
+        create_run(src_conn, exp.id, name="run-1")
+
+        stats1 = _merge_single_db(src_path, tgt_conn, "test-remote", "label", None)
+        assert stats1 is not None
+        assert stats1.new_runs == 1
+
+        stats2 = _merge_single_db(src_path, tgt_conn, "test-remote", "label", None)
+        assert stats2 is not None
+        assert stats2.skipped_runs == 1  # Run unchanged, but merge still ran
+
+    def test_fingerprint_not_cached_on_failure(self, target_db, tmp_path):
+        """Fingerprint should NOT be cached if integrity check fails."""
+        tgt_conn, _ = target_db
+
+        bad_path = tmp_path / "corrupt.db"
+        bad_path.write_text("not a database")
+
+        fingerprints = {}
+        result = _merge_single_db(bad_path, tgt_conn, "test-remote", "label", fingerprints)
+        assert result is None
+        assert str(bad_path) not in fingerprints
